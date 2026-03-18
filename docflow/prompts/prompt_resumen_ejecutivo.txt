@@ -1,0 +1,14 @@
+INSTRUCCIONES: Genera un informe ejecutivo resumido a partir de los datos documentales.
+
+DATOS:
+{{data}}
+
+GENERA UN INFORME CON:
+1. Total de documentos
+2. Desglose por estado (pendientes, aprobados, reclamados, rechazados)
+3. Días promedio de retraso de documentos pendientes
+4. Top 5 documentos más críticos (mayor tiempo pendiente)
+5. Top 3 clientes con más documentos pendientes
+6. Recomendaciones de acción (máximo 3 puntos)
+
+FORMATO: Profesional, claro, listo para enviar a dirección de proyecto.

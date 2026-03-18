@@ -1,0 +1,285 @@
+# =====================================================
+# DOCFLOW INDUSTRIAL – PROMPTS COMPLETO PARA CLAUDE
+# =====================================================
+
+# =========================================
+# FASE 0 – Estrategia y Diseño del Producto
+# =========================================
+
+## Prompt 0.1 – Diseño estratégico del SaaS
+Objetivo:
+Diseñar un SaaS de gestión documental industrial para empresas EPC y fabricación pesada.
+Inicialmente será solo para uso interno en EIPSA, pero con perspectiva de externalizar o vender el producto si funciona bien.
+
+Contexto:
+- Muchos gestores usan Excel y ERP para seguimiento documental.
+- Problemas principales: seguimiento manual, emails repetitivos, errores en fechas y revisiones, falta de trazabilidad.
+
+Tareas para Claude:
+1) Definir problema principal que resuelve.
+2) Definir público objetivo.
+3) Listar módulos principales del sistema.
+4) Diferenciación frente a herramientas tipo Aconex o Procore.
+5) Funcionalidades que deben ir en el MVP.
+6) Funcionalidades premium que se pueden añadir después.
+
+Entrega:
+- Listado claro y estructurado de puntos.
+- Sin generar código, solo diseño estratégico.
+
+---
+
+## Prompt 0.2 – Arquitectura SaaS profesional
+Objetivo:
+Diseñar la arquitectura base de un SaaS de gestión documental industrial (DocFlow Industrial).
+
+Contexto:
+- Inicialmente la base de datos será Excel con varias sheets.
+- En el futuro migrará a PostgreSQL.
+- Debe tener autenticación de usuarios y roles (admin, gestor, cliente).
+- Módulos: Dashboard, Control de revisiones, Generación de reclamaciones, Respuesta automática a emails, Reportes automáticos.
+
+Tareas para Claude:
+1) Arquitectura de backend recomendada (framework y estructura de carpetas).
+2) Cómo separar lógica de negocio y acceso a datos desde el inicio.
+3) Cómo diseñar la capa de repositorio para cambiar Excel por PostgreSQL sin romper el sistema.
+4) Cómo estructurar los servicios de IA.
+5) Recomendaciones para que el sistema sea escalable y preparado para multiempresa.
+
+Entrega:
+- Explicación profesional y clara de arquitectura.
+- Sin generar código.
+
+# =========================================
+# FASE 1 – MVP Backend + Excel
+# =========================================
+
+## Prompt 1.1 – Backend FastAPI + lectura de Excel
+Objetivo:
+Crear un backend en FastAPI que lea un Excel de gestión documental y exponga una API para frontend.
+
+Requisitos:
+- FastAPI
+- pandas para leer Excel
+- Modular: routers → services → repositories
+- Estructura de carpetas profesional
+- Retornar datos de documentos con campos: Documento, Cliente, Estado, Fecha de envío, Responsable, Última revisión
+
+Tareas para Claude:
+1) Explicación de estructura de proyecto para backend.
+2) Generar código paso a paso:
+   a) main.py con FastAPI
+   b) router documents.py con endpoints
+   c) service document_service.py
+   d) repository excel_repository.py
+3) Explicación de cada archivo y función.
+
+Entrega:
+- Primero explicación de estructura.
+- Luego cada archivo paso a paso.
+
+---
+
+## Prompt 1.2 – API de filtrado y búsqueda de documentos
+Objetivo:
+Agregar funcionalidades al backend para filtrar documentos por estado, cliente o responsable.
+
+Requisitos:
+- Endpoints REST claros
+- Parámetros opcionales de filtrado
+- Respuesta JSON lista para frontend
+
+Tareas para Claude:
+1) Explicar cómo implementar filtrado en el servicio.
+2) Generar código del endpoint de filtrado.
+3) Explicar ejemplo de request/response.
+
+# =========================================
+# FASE 2 – Frontend React SaaS
+# =========================================
+
+## Prompt 2.1 – Estructura Frontend React
+Objetivo:
+Crear frontend moderno para SaaS de gestión documental usando React + Tailwind/MUI.
+
+Requisitos:
+- Mostrar documentos en tabla interactiva
+- Semáforos visuales por estado (pendiente, aprobado, reclamado)
+- Filtros por cliente, responsable, estado
+- Integración con API FastAPI
+
+Tareas para Claude:
+1) Explicar estructura de proyecto React.
+2) Crear componentes principales: Dashboard, Table, Filters.
+3) Generar código de ejemplo para mostrar datos del backend.
+4) Explicar cómo conectar API y renderizar datos dinámicamente.
+
+---
+
+## Prompt 2.2 – Dashboard gráfico y resúmenes
+Objetivo:
+Agregar dashboard con gráficos y resúmenes de estado de documentos.
+
+Requisitos:
+- Gráficas: total documentos, pendientes, reclamados
+- Indicadores visuales tipo semáforo
+- Interactividad mínima
+
+Tareas para Claude:
+1) Explicar cómo estructurar el dashboard React.
+2) Generar ejemplo de componente de gráficos (Chart.js o Recharts).
+3) Explicación de integración con datos de API.
+
+# =========================================
+# FASE 3 – Reclamaciones y Emails automáticos
+# =========================================
+
+## Prompt 3.1 – Generación de reclamaciones automáticas
+Objetivo:
+Generar emails automáticos de reclamación de documentos pendientes.
+
+Contexto:
+- Excel o base de datos con campos: Documento, Cliente, Fecha de envío, Estado, Responsable
+- Emails deben ser profesionales, educados, claros, indicando número de días pendientes
+
+Tareas para Claude:
+1) Crear prompt reutilizable para generar email automático.
+2) Explicar cómo ajustar urgencia según días pendientes.
+3) Entregar plantilla de email con placeholders: {{cliente}}, {{documento}}, {{fecha_envio}}, {{dias_pendientes}}
+
+---
+
+## Prompt 3.2 – Respuesta automática a emails (IA)
+Objetivo:
+Diseñar sistema que lea hilos completos de emails y genere respuestas automáticas profesionales.
+
+Requisitos:
+- Leer hilo completo
+- Entender contexto: documento, problema, solicitud
+- No inventar datos que no estén en el hilo
+- Pedir aclaración si falta información
+- Generar respuesta formal y clara
+
+Tareas para Claude:
+1) Crear prompt maestro robusto para respuesta automática.
+2) Incluir instrucciones para minimizar alucinaciones.
+3) Entregar prompt listo para producción con placeholders y ejemplos.
+
+# =========================================
+# FASE 4 – Reportes automáticos
+# =========================================
+
+## Prompt 4.1 – Reportes PDF/Excel
+Objetivo:
+Generar reportes automáticos desde la base de datos (Excel inicial, PostgreSQL futuro).
+
+Requisitos:
+- PDF resumen: total documentos, pendientes, reclamados
+- Excel filtrado
+- Descargable desde frontend
+
+Tareas para Claude:
+1) Explicar cómo estructurar servicio de reportes en backend.
+2) Generar ejemplo de código para exportar Excel y PDF.
+3) Explicar integración con frontend React para descarga.
+
+# =========================================
+# FASE 5 – Preparación futura para PostgreSQL y SaaS escalable
+# =========================================
+
+## Prompt 5.1 – Migración a PostgreSQL y multiempresa
+Objetivo:
+Rediseñar backend para migrar de Excel a PostgreSQL y preparar SaaS multiempresa.
+
+Requisitos:
+- Separar capa de acceso a datos (repository pattern)
+- Soportar múltiples empresas/usuarios
+- Backend compatible con frontend React sin cambios
+- Preparado para despliegue en VPS o cloud
+
+Tareas para Claude:
+1) Explicar cambios de arquitectura necesarios.
+2) Explicar cómo organizar repositorios y servicios.
+3) Dar recomendaciones para escalabilidad y seguridad.
+
+# =========================================
+# FASE 6 – Pruebas locales con taste-skill / LLM local
+# =========================================
+
+## Prompt 6.1 – Leer Excel y mostrar documentos localmente
+Objetivo:
+Probar lectura de Excel usando taste-skill o Python local.
+
+Requisitos:
+- pandas para leer Excel
+- Imprimir tabla con Documento, Cliente, Estado, Fecha de envío, Responsable
+- Permitir filtrar por estado y cliente
+
+Tareas para Claude:
+1) Explicar cómo leer Excel y filtrar datos.
+2) Generar ejemplo de código Python listo para ejecutar.
+3) Explicar cómo adaptar datos para pruebas de IA local.
+
+---
+
+## Prompt 6.2 – Generación de emails de reclamación local
+Objetivo:
+Probar generación de emails de reclamación sin backend completo.
+
+Requisitos:
+- Input: fila del Excel con documento pendiente
+- Output: email profesional de reclamación
+- Personalizable según días pendientes
+- Placeholder: {{cliente}}, {{documento}}, {{fecha_envio}}, {{dias_pendientes}}
+
+Tareas para Claude:
+1) Crear prompt reutilizable para taste-skill.
+2) Entregar plantilla de email.
+3) Instrucciones para ajustar tono y urgencia según días.
+
+---
+
+## Prompt 6.3 – Respuestas automáticas locales a emails
+Objetivo:
+Probar respuestas automáticas a hilos de email completos usando IA local.
+
+Requisitos:
+- Input: texto completo del hilo
+- Output: respuesta profesional, clara y concisa
+- Analizar contexto: documento, problema, solicitud
+- No inventar datos, pedir aclaración si falta información
+
+Tareas para Claude:
+1) Crear prompt maestro para generar respuesta automática.
+2) Incluir placeholders y ejemplos.
+3) Instrucciones para minimizar alucinaciones.
+
+---
+
+## Prompt 6.4 – Generación de resúmenes locales
+Objetivo:
+Probar generación de reportes resumidos desde Excel usando IA local.
+
+Requisitos:
+- Input: lista de documentos con estado
+- Output: resumen tipo informe ejecutivo
+- Campos: total documentos, pendientes, reclamados, días promedio de retraso
+
+Tareas para Claude:
+1) Crear prompt para generar informe resumido.
+2) Entregar ejemplo de salida clara y profesional.
+3) Explicación de cómo adaptar datos de Excel para pruebas locales.
+
+---
+
+# =========================================
+# FLUJO RECOMENDADO
+# =========================================
+
+1) Ejecutar Fase 0 → prompts 0.1 y 0.2
+2) Fase 1 → backend Excel (1.1 y 1.2)
+3) Fase 2 → frontend React (2.1 y 2.2)
+4) Fase 3 → generación de emails y respuestas (3.1 y 3.2)
+5) Fase 4 → reportes (4.1)
+6) Fase 5 → migración futura a PostgreSQL (5.1)
+7) Fase 6 → pruebas locales con taste-skill (6.1 a 6.4)

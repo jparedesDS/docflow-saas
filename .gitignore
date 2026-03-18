@@ -1,0 +1,98 @@
+# Entorno virtual Python
+docflow_env/
+venv/
+.venv/
+env/
+.env/
+
+# Bytecode y caché
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Variables de entorno (secretos)
+.env
+*.env
+!.env.example
+docflow/frontend/.env
+
+# DocuSign — clave RSA privada (nunca subir)
+docusign_private.pem
+**/docusign_private.pem
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.claude/
+
+# Logs y datos generados en runtime
+*.log
+docflow/backend/notifications_log.json
+docflow/backend/processed_emails.json
+docflow/backend/agenda_data.json
+docflow/backend/claims_log.json
+
+# Datos reales de empresa (nunca subir)
+*.xlsx
+*.xls
+data_tags.xlsx
+
+# Emails descargados / archivos temporales
+*.msg
+*.htm
+*_archivos/
+"RE RECLAIMS*"
+
+# Scripts de utilidad locales
+read_tags.py
+
+# package.json duplicados en raíz (el real está en docflow/frontend/)
+/package.json
+/package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Tests / cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Node (si el frontend usa npm)
+node_modules/
+npm-debug.log*
+
+# File locks (json_store.py)
+*.json.lock
+
+# Runtime state JSON adicional
+docflow/backend/polling_status.json
+docflow/backend/scheduled_reports.json
+
+# Auth data (hashes bcrypt)
+docflow/backend/users.json
+
+# Archivo temporal de desarrollo
+docflow/backend/services/_temp_monthly.py
+
+# Config local MCP
+.mcp.json
+
+# Repos externos clonados en el directorio
+taste-skill/
+email-best-practices/
+
+# Scripts de diagnóstico/test locales
+docflow/backend/diagnose_*.py
+docflow/backend/test_*.py

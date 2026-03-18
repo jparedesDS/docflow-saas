@@ -1,0 +1,276 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    ARQUITECTURA: Procesamiento de Emails GAIA
+═══════════════════════════════════════════════════════════════════════════════
+
+FLUJO COMPLETO DE PROCESAMIENTO
+────────────────────────────────
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       EMAIL GAIA (TNEF - Outlook)                            │
+│  From: support@gaia.technip.fr                                              │
+│  Subject: [GAIA] Notification: 214726C-TEN-EIPSA-TN-OD-0024 - Code 3...     │
+│  Body: application/ms-tnef (encapsulation)                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ↓
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    [1] BACKEND: Frontend Requests Preview                    │
+│  GET /api/transmittals/preview?uid=12345                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ↓
+┌──────────────────────────────────────────────────────────────────────────────┐
+│        [2] transmittal_service.preview_email(uid) [línea 43-85]             │
+│        ─────────────────────────────────────────────                        │
+│  • Fetch email del IMAP                                                     │
+│  • Extrae: From, Subject, Date                                              │
+│  • Obtiene html_body                                                        │
+│  • Detecta plataforma (parser)                                              │
+│  • Parsea con gaia_parser.parse()                                           │
+│  • Retorna dict con documentos                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ↓
+                    ┌───────────────────────────────┐
+                    │ imap_service.fetch_email()    │  [línea 62-70]
+                    │ Obtiene msg object completo   │
+                    └───────────────────────────────┘
+                                    │
+                                    ↓
+                    ┌───────────────────────────────┐
+                    │ imap_service.get_html_body()  │  [línea 82-105] ⚠️ PROBLEMA
+                    │                               │
+                    │ Intento 1: Busca text/html    │
+                    │   → TR, ACONEX, SENDOC ✓      │
+                    │                               │
+                    │ Intento 2: Extrae de TNEF ❌  │
+                    │   → GAIA emails (TNEF)        │
+                    │   → Sin try/except            │
+                    │   → Sin fallback              │
+                    │   → Sin logging               │
+                    └───────────────────────────────┘
+                                    │
+                        ┌───────────┴───────────┐
+                        ↓                       ↓
+              ✓ SI html_body            ✗ SI NO html_body
+                                        → ValueError
+                                        → Error en preview
+                                    │
+                                    ↓
+                    ┌───────────────────────────────┐
+                    │ gaia_parser.parse()           │  [línea 46-146]
+                    │ pd.read_html(StringIO(html))  │
+                    │                               │
+                    │ Busca tabla con "Reference"   │
+                    │ Extrae campos del Reference   │
+                    │ Mapea estados (Code 1-5)      │
+                    │ Retorna DataFrame             │
+                    └───────────────────────────────┘
+                                    │
+                                    ↓
+                    ┌───────────────────────────────┐
+                    │ Retorna JSON al Frontend:     │
+                    │ {                             │
+                    │   "platform": "GAIA",         │
+                    │   "documents": [...],         │
+                    │   "suggested_to": [...],      │
+                    │   "suggested_cc": [...]       │
+                    │ }                             │
+                    └───────────────────────────────┘
+                                    │
+                                    ↓
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       [3] Frontend UI: Muestra Preview                       │
+│  • Tabla con documentos extraídos                                            │
+│  • Botón "Send Notification"                                                │
+│  • Campos To/CC sugeridos                                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+ESTRUCTURA DE ARCHIVOS RELEVANTES
+──────────────────────────────────
+
+docflow/backend/services/
+├── imap_service.py                 ← ARCHIVO PRINCIPAL A MODIFICAR
+│   └── get_html_body(msg)          ← Función con problema (línea 82-105)
+│
+├── transmittal_service.py
+│   ├── preview_email()             ← Orquestador del flujo
+│   ├── process_and_notify()        ← Envía notificación
+│   └── fetch_unread_emails()       ← Lista emails
+│
+├── parsers/
+│   ├── base_parser.py              ← Mappings compartidos
+│   │   ├── GAIA_STATUS_MAP
+│   │   ├── GAIA_MATERIAL_MAP
+│   │   ├── PO_CLIENT_MAP
+│   │   └── DOC_TYPE_MAP
+│   │
+│   ├── gaia_parser.py              ← Parser GAIA
+│   │   ├── can_parse()
+│   │   ├── extract_transmittal_code()
+│   │   └── parse()                 ← Extrae tabla HTML
+│   │
+│   ├── tr_parser.py                ← Parser TR (referencia)
+│   ├── aconex_parser.py            ← Parser ACONEX (referencia)
+│   └── sendoc_parser.py            ← Parser SENDOC (referencia)
+│
+├── smtp_service.py
+│   └── send_html_email()           ← Envía notificación
+│
+└── [otros servicios...]
+
+
+CÓMO GAIA DIFIERE DE TR/ACONEX/SENDOC
+──────────────────────────────────────
+
+TR (egesdoc@grupotr.es)
+├─ Estructura: multipart/mixed
+├─ Contenido: text/html directo ✓
+├─ Tabla: En cuerpo HTML
+└─ Status: Vía headers en tabla
+
+ACONEX (noreply@aconex.com)
+├─ Estructura: multipart/mixed
+├─ Contenido: text/html directo ✓
+├─ Tabla: En cuerpo HTML
+└─ Status: Vía "S.R. Status" column
+
+SENDOC (adminsendoc@corporate.sener)
+├─ Estructura: multipart/mixed
+├─ Contenido: text/html directo ✓
+├─ Tabla: Key-value pairs transformadas
+└─ Status: Vía "Step" column
+
+GAIA (gaia/technip)
+├─ Estructura: multipart/mixed
+├─ Contenido: application/ms-tnef ⚠️ ESPECIAL
+├─ TNEF contiene:
+│  ├─ htmlbody (ideal) ✓
+│  ├─ rtfbody (requiere striprtf)
+│  └─ body (texto plano)
+├─ Tabla: En htmlbody dentro de TNEF
+└─ Status: Vía "Code X" en subject
+
+DIFERENCIA CLAVE:
+─────────────────
+TR, ACONEX, SENDOC:
+  email.walk() → text/html → payload.decode() → HTML string ✓
+
+GAIA:
+  email.walk() → application/ms-tnef → TNEF() → tnef.htmlbody ⚠️
+
+
+PROBLEMA EN CONTEXTO
+────────────────────
+
+Línea 99 de imap_service.py:
+  tnef = TNEF(tnef_data)  ← Sin try/except
+
+Escenarios problemáticos:
+1. tnef_data vacío/corrupto → TNEF() lanza excepción
+2. tnef.htmlbody es None → Continúa al siguiente intento
+3. tnef.htmlbody vacío pero rtfbody existe → Ignora rtfbody
+4. Solo tnef.body existe → Ignora body
+
+Resultado: get_html_body() retorna "" → preview_email() lanza ValueError
+
+
+SOLUCIÓN EN CONTEXTO
+────────────────────
+
+Mejorar get_html_body() para:
+
+1. Try/except alrededor de TNEF
+   └─ Captura excepciones sin romper app
+
+2. Fallback: htmlbody → rtfbody → body
+   ├─ htmlbody: Ideal, retorna directamente
+   ├─ rtfbody: Convierte con striprtf.rtf_to_text()
+   └─ body: Escapa HTML y retorna <pre>
+
+3. Logging detallado
+   ├─ Qué se encontró (TNEF/HTML)
+   ├─ Qué se usó (htmlbody/rtfbody/body)
+   └─ Qué falló (si aplicable)
+
+
+DEPENDENCIAS
+────────────
+
+Actualmente instaladas:
+✓ tnefparse          (ya en requirements.txt)
+✓ pandas             (para pd.read_html)
+✓ email              (built-in)
+
+Posiblemente necesarias:
+? striprtf           (solo si GAIA tiene rtfbody)
+  └─ pip install striprtf
+
+Verificar:
+  python -c "import tnefparse; print('OK')"
+  python -c "import striprtf; print('OK')"
+
+
+IMPACTO DE CAMBIOS
+──────────────────
+
+Archivos a modificar:
+└─ docflow/backend/services/imap_service.py [1 archivo]
+   └─ Función: get_html_body() [1 función]
+   └─ Líneas: 82-105 → ~130-180 (con comentarios)
+
+Archivos afectados (pero no modificados):
+├─ transmittal_service.py [Usa imap_service.get_html_body()]
+├─ gaia_parser.py [Usa result de get_html_body()]
+└─ [Frontend] [Recibe JSON con documentos]
+
+Compatibilidad hacia atrás:
+✓ TR emails sigue igual (text/html directo)
+✓ ACONEX emails sigue igual (text/html directo)
+✓ SENDOC emails sigue igual (text/html directo)
+✓ Fallback a "" si no hay contenido (como antes)
+
+
+TESTING
+───────
+
+Después de cambios, probar:
+
+1. Email TR (existente)
+   → Debe mostrar tabla (text/html directo)
+
+2. Email ACONEX (existente)
+   → Debe mostrar tabla (text/html directo)
+
+3. Email SENDOC (existente)
+   → Debe mostrar tabla (text/html directo)
+
+4. Email GAIA (nuevo soporte)
+   → Debe extraer HTML de TNEF
+   → Debe mostrar tabla
+
+5. Email GAIA con rtfbody solo (si existe)
+   → Debe convertir RTF a HTML
+   → Debe mostrar tabla
+
+6. Email malformado
+   → Debe loguear error
+   → Debe retornar ""
+   → preview_email debe lanzar ValueError
+
+
+TIMELINE
+────────
+
+Diagnóstico:        python test_gaia_tnef.py
+Implementación:     5-10 minutos (copy-paste)
+Instalación:        1 minuto (pip install striprtf)
+Testing:            5 minutos
+TOTAL:              ~20 minutos
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Conclusión: El problema es localizado, la solución es simple, el impacto es bajo.
+
+═══════════════════════════════════════════════════════════════════════════════

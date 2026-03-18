@@ -1,0 +1,18 @@
+INSTRUCCIONES: Genera un email profesional de reclamación de documento industrial.
+
+DATOS DEL DOCUMENTO:
+- Documento: {{documento}}
+- Cliente: {{cliente}}
+- Fecha de envío: {{fecha_envio}}
+- Días pendientes: {{dias_pendientes}}
+- Responsable: {{responsable}}
+
+REGLAS:
+1. Si días pendientes <= 7: tono amable, recordatorio suave.
+2. Si días pendientes entre 8 y 21: tono firme, solicitar atención urgente.
+3. Si días pendientes > 21: tono formal de reclamación, mencionar impacto en proyecto.
+4. Siempre incluir número de documento y fecha de envío original.
+5. Siempre cerrar con nombre del responsable y "EIPSA - Control Documental".
+6. No inventar datos. Usar solo los proporcionados.
+
+GENERA EL EMAIL COMPLETO (asunto + cuerpo):

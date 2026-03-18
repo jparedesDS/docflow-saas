@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .card { @apply bg-card border border-border rounded-xl shadow-sm; }
+  .btn-primary { @apply bg-accent text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-accent-hover transition-colors; }
+  .btn-secondary { @apply bg-transparent border border-border text-text-sub rounded-lg px-4 py-2 text-sm font-semibold hover:bg-card-hover transition-colors; }
+  .btn-ghost { @apply bg-transparent text-text-sub rounded-lg px-2 py-1.5 text-sm hover:bg-card-hover transition-colors; }
+  .btn-danger { @apply bg-transparent border border-red-500/30 text-red-500 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-red-500/10 transition-colors; }
+  .input-field { @apply w-full px-3 py-2 bg-card-input border border-border rounded-lg text-sm text-text-main placeholder:text-text-muted outline-none focus:border-accent transition-colors; }
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  transition: background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Transition global spring */
+*, *::before, *::after {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* CSS vars light — Industrial Indigo */
+:root {
+  --accent:       #4F46E5;
+  --accent-hover: #4338CA;
+  --accent-soft:  rgba(79,70,229,0.07);
+  --bg-page:      #F8FAFC;
+  --bg-card:      #FFFFFF;
+  --bg-sidebar:   #0E1019;
+  --bg-input:     #F1F5F9;
+  --bg-hover:     #E2E8F0;
+  --border:       #CBD5E1;
+  --surface:      #FFFFFF;
+  --text-main:    #0F172A;
+  --text-sub:     #475569;
+  --text-muted:   #94A3B8;
+  --shadow-sm:       0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md:       0 4px 12px rgba(0,0,0,0.08);
+  --shadow-dropdown: 0 10px 30px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.03);
+  --border-sidebar:   #252836;
+  --bg-sidebar-hover: #1A1C28;
+}
+
+.dark {
+  --accent:       #6366F1;
+  --accent-hover: #4F46E5;
+  --accent-soft:  rgba(99,102,241,0.09);
+  --bg-page:      #0C0D12;
+  --bg-card:      #151721;
+  --bg-sidebar:   #0E1019;
+  --bg-input:     #1C1E2A;
+  --bg-hover:     #252836;
+  --border:       #2E3244;
+  --surface:      #151721;
+  --text-main:    #F1F5F9;
+  --text-sub:     #94A3B8;
+  --text-muted:   #64748B;
+  --shadow-sm:       0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md:       0 4px 12px rgba(0,0,0,0.3);
+  --shadow-dropdown: 0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+  --border-sidebar:   #252836;
+  --bg-sidebar-hover: #1A1C28;
+}
+
+body {
+  background-color: var(--bg-page);
+  color: var(--text-main);
+}
+
+/* Shimmer keyframe */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Float keyframe */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+/* FadeUp keyframe */
+@keyframes fadeUp {
+  0% { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* SlideIn para panel detalle */
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in { animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* FadeIn para toasts */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes loadingBar {
+  0%   { width: 0%;   opacity: 1; }
+  70%  { width: 85%;  opacity: 1; }
+  100% { width: 100%; opacity: 0; }
+}
+
+/* Focus ring utility */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Tabla sticky header */
+thead.sticky th { box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark ::-webkit-scrollbar-thumb { background: #3F3F46; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #71717A; }
