@@ -1,9 +1,16 @@
-"""Thread/process-safe JSON file read/write for Windows (msvcrt)."""
+"""Thread/process-safe JSON file read/write (cross-platform: Windows + Linux)."""
 
 import json
 import os
-import msvcrt
+import sys
 from contextlib import contextmanager
+
+_IS_WINDOWS = sys.platform == "win32"
+
+if _IS_WINDOWS:
+    import msvcrt
+else:
+    import fcntl
 
 
 @contextmanager
@@ -12,17 +19,24 @@ def _file_lock(path: str):
     lock_path = path + ".lock"
     lf = open(lock_path, "a+b")
     try:
-        lf.seek(0)
-        if lf.read(1) == b"":
-            lf.write(b"\x00")
-            lf.flush()
-        lf.seek(0)
-        msvcrt.locking(lf.fileno(), msvcrt.LK_LOCK, 1)
-        try:
-            yield
-        finally:
+        if _IS_WINDOWS:
             lf.seek(0)
-            msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
+            if lf.read(1) == b"":
+                lf.write(b"\x00")
+                lf.flush()
+            lf.seek(0)
+            msvcrt.locking(lf.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lf.seek(0)
+                msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
     finally:
         lf.close()
 

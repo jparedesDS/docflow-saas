@@ -12,7 +12,7 @@ from services.monitoring_service import MonitoringService
 from services.parsers.base_parser import compute_recipients, get_responsable_email, _load_logo_b64
 from services.smtp_service import send_html_email
 from repositories.instances import data_repo, consulta_repo
-from utils.config import SMTP_USER
+from utils.config import SMTP_USER, PEDIDOS_BASE_PATH
 from utils.json_store import read_json, write_json
 
 CLAIMS_LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "claims_log.json")
@@ -286,7 +286,7 @@ class ClaimService:
         yy = m.group(1)
         year_full = f"20{yy}"
 
-        base = Path(r"M:\base de datos de pedidos") / f"Año {year_full}" / f"{year_full} Pedidos"
+        base = Path(PEDIDOS_BASE_PATH) / f"Año {year_full}" / f"{year_full} Pedidos"
         if not base.exists():
             return None
 

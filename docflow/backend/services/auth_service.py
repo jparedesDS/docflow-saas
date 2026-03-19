@@ -9,6 +9,14 @@ from jose import JWTError, jwt
 JWT_SECRET = os.getenv("JWT_SECRET", "docflow-dev-secret-change-me")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
+REFRESH_TOKEN_EXPIRE_HOURS = 168  # 7 days
+
+# Block startup if using default secret in production
+if os.getenv("ENV") == "production" and JWT_SECRET == "docflow-dev-secret-change-me":
+    raise RuntimeError(
+        "JWT_SECRET must be set to a secure value in production. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
 
 
 def hash_password(password: str) -> str:
@@ -25,13 +33,27 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_token(user_data: dict) -> str:
     """Create a JWT token.
 
-    user_data should contain: sub, role, initials
+    user_data should contain: sub, role, initials, tenant_id
     """
     payload = {
         "sub": user_data["sub"],
         "role": user_data["role"],
         "initials": user_data["initials"],
+        "tenant_id": user_data.get("tenant_id", 1),
         "exp": datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_refresh_token(user_data: dict) -> str:
+    """Create a long-lived refresh token."""
+    payload = {
+        "sub": user_data["sub"],
+        "role": user_data["role"],
+        "initials": user_data["initials"],
+        "tenant_id": user_data.get("tenant_id", 1),
+        "type": "refresh",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=REFRESH_TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -39,3 +61,11 @@ def create_token(user_data: dict) -> str:
 def verify_token(token: str) -> dict:
     """Verify and decode a JWT token. Raises JWTError on failure."""
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+
+def verify_refresh_token(token: str) -> dict:
+    """Verify a refresh token. Raises JWTError if invalid or wrong type."""
+    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    if payload.get("type") != "refresh":
+        raise JWTError("Not a refresh token")
+    return payload

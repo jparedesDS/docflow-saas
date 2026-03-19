@@ -1,32 +1,51 @@
 # DocFlow
 
-Herramienta interna de gestión documental para EIPSA. Single-tenant, sin router frontend.
+SaaS multi-tenant de gestión documental. Originalmente herramienta interna de EIPSA, ahora soporta múltiples organizaciones con aislamiento de datos row-level.
 
 ## Stack
 
 - **Backend**: FastAPI (Python 3.11+) — `docflow/backend/`
 - **Frontend**: React 18 (CRA, sin react-router) — `docflow/frontend/src/`
+- **Base de datos**: PostgreSQL 16 (SQLAlchemy 2.0 + Alembic) — fallback a Excel via `STORAGE_BACKEND`
 - **Estilos**: Tailwind CSS 3 (`darkMode: 'class'`) + CSS vars en `index.css`
 - **Iconos**: Phosphor Icons (`@phosphor-icons/react`) + Heroicons
 - **Gráficas**: Recharts
 - **Animaciones**: Framer Motion
 - **HTTP client**: Axios (centralizado en `services/api.js`)
-- **Auth**: JWT (python-jose + bcrypt). Usuarios en `backend/users.json`
-- **Datos**: Excel (openpyxl/pandas) — no hay base de datos SQL
+- **Auth**: JWT (python-jose + bcrypt) con `tenant_id` en payload
+- **Billing**: Stripe (checkout, portal, webhooks)
+- **Infra**: Docker Compose (PostgreSQL, Redis, backend, frontend)
 
 ## Comandos
 
 ```bash
-# Backend
+# Backend (modo Excel — original)
 cd docflow/backend
 pip install -r ../../requirements.txt
 uvicorn main:app --reload --port 8000
+
+# Backend (modo PostgreSQL)
+STORAGE_BACKEND=postgres DATABASE_URL=postgresql://... uvicorn main:app --reload
+
+# Migraciones
+cd docflow/backend
+alembic upgrade head
+
+# Import Excel → PostgreSQL
+cd docflow/backend
+python scripts/import_excel.py
 
 # Frontend
 cd docflow/frontend
 npm install
 npm start          # dev en :3000
 npm run build      # producción
+
+# Docker (desarrollo)
+docker compose up -d
+
+# Docker (producción)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ## Estructura del proyecto
@@ -34,33 +53,69 @@ npm run build      # producción
 ```
 docflow/
 ├── backend/
-│   ├── main.py                    # FastAPI app + APScheduler (lifespan)
-│   ├── routers/                   # Endpoints API (20 módulos)
-│   ├── services/                  # Lógica de negocio (24 módulos)
-│   │   └── parsers/               # Parsers de email (tr_parser, base_parser)
-│   ├── models/                    # Pydantic models
+│   ├── main.py                    # FastAPI app + APScheduler + middleware stack
+│   ├── db/
+│   │   ├── database.py            # SQLAlchemy engine + get_db() dependency
+│   │   └── models.py              # ORM models (17 tablas, todas con tenant_id)
+│   ├── alembic/                   # Migraciones PostgreSQL
+│   ├── routers/                   # Endpoints API (23 módulos)
+│   │   ├── auth.py                # Login, refresh, /me, /users (JSON o Postgres)
+│   │   ├── tenants.py             # Registro, invitaciones, settings
+│   │   ├── billing.py             # Stripe checkout, portal, webhooks, usage
+│   │   └── admin.py               # Superadmin: listar/editar tenants, impersonar
+│   ├── services/                  # Lógica de negocio (28 módulos)
+│   │   ├── tenant_service.py      # Registro, invitaciones, settings per-tenant
+│   │   ├── plan_service.py        # Planes (free/pro/enterprise), feature flags, quotas
+│   │   ├── billing_service.py     # Stripe customer, subscriptions, webhooks
+│   │   ├── usage_service.py       # Contadores mensuales por tenant
+│   │   └── parsers/               # Parsers de email
 │   ├── repositories/
-│   │   └── instances.py           # Singletons: data_repo, consulta_repo, tags_repo
-│   ├── utils/
-│   │   ├── config.py              # USERS, constantes, env vars
-│   │   ├── json_store.py          # read_json/write_json con file locking
-│   │   ├── auth_middleware.py     # JWT middleware
-│   │   └── logging_config.py     # structlog setup
-│   └── users.json                 # Usuarios persistidos (bcrypt hashes)
+│   │   ├── base_repository.py     # Interfaz abstracta
+│   │   ├── excel_repository.py    # Implementación Excel (TTL cache 60s)
+│   │   ├── postgres_repository.py # Implementación PostgreSQL (JSONB + tenant_id)
+│   │   ├── instances.py           # Singletons (switch STORAGE_BACKEND)
+│   │   └── factory.py             # FastAPI dependencies per-request
+│   ├── scripts/
+│   │   └── import_excel.py        # Migración Excel → PostgreSQL
+│   ├── models/                    # Pydantic models
+│   └── utils/
+│       ├── config.py              # USERS, constantes, env vars
+│       ├── json_store.py          # read_json/write_json con file locking
+│       ├── auth_middleware.py     # JWT dependencies (tenant_id incluido)
+│       ├── rate_limit.py          # Rate limiting por IP + por tenant/plan
+│       └── logging_config.py     # structlog setup
 ├── frontend/src/
-│   ├── App.js                     # Sidebar + routing por estado (activeSection)
-│   ├── pages/                     # 24 páginas (incl. ProjectsHub, ReportsHub, WorkflowsHub)
-│   ├── components/                # 15+ componentes reutilizables
-│   ├── contexts/                  # ThemeContext, I18nContext, ToastContext, TenantContext
-│   ├── constants/
-│   │   └── status.js              # STATUS_COLORS (fuente única de colores)
-│   ├── utils/
-│   │   └── dates.js               # formatDate, timeAgo, diasDesde, etc.
-│   ├── services/
-│   │   └── api.js                 # Axios instance con baseURL + interceptors
-│   └── translations/
-│       └── index.js               # Diccionario ES/EN
+│   ├── App.js                     # Sidebar + routing + registro
+│   ├── pages/
+│   │   ├── Register.js            # Formulario de registro de organización
+│   │   ├── Onboarding.js          # Wizard post-registro
+│   │   ├── AdminDashboard.js      # Panel superadmin (gestión de tenants)
+│   │   └── ...                    # 24+ páginas de la app
+│   ├── components/
+│   │   └── LoginScreen.js         # Login con selector de usuarios + email + "Crear cuenta"
+│   ├── contexts/
+│   │   ├── TenantContext.js       # Fetch real de /tenants/me + feature flags
+│   │   └── ...
+│   └── services/
+│       └── api.js                 # Axios con JWT + X-Tenant-Id header
 ```
+
+## Multi-Tenancy
+
+**Arquitectura**: Row-level tenancy — `tenant_id` en cada tabla.
+
+**Switch de storage** via `STORAGE_BACKEND`:
+- `excel` (default): Comportamiento original, ExcelRepository singletons
+- `postgres`: PostgresRepository con filtro automático por tenant_id
+
+**Tablas principales**: `tenants`, `users`, `documents` (JSONB), `consultas` (JSONB), `tags_inspections` (JSONB), `agenda_items`, `claims_log`, `notifications`, `email_templates`, `scheduled_reports`, `processed_emails`, `invitations`, `tenant_settings`, `billing_info`, `usage_records`
+
+**Planes**:
+- `free`: 3 users, 500 docs, features limitados
+- `pro`: 15 users, 10K docs, todas las features
+- `enterprise`: ilimitado
+
+**JWT payload**: `{sub, role, initials, tenant_id, exp}`
 
 ## Arquitectura de navegación (v3.0)
 
@@ -91,6 +146,7 @@ No hay react-router. `App.js` maneja `activeSection` (sidebar) y cada hub maneja
 - **Tema**: CSS vars (`--bg-page`, `--bg-card`, `--border`, `--text-main`). Dark mode via class `dark`.
 - **i18n**: `useI18n()` → `t('key')`. Keys en `translations/index.js`.
 - **Iconos**: Preferir Phosphor (`weight="thin"` para empty states, `weight="bold"` para acciones).
+- **Feature flags**: `useTenant().hasFeature('feature_name')` para condicionar UI.
 
 ### Paleta "Industrial Indigo"
 - **Accent**: Light `#4F46E5`, Dark `#6366F1`
@@ -104,18 +160,24 @@ No hay react-router. `App.js` maneja `activeSection` (sidebar) y cada hub maneja
 ## Convenciones backend
 
 - **Router → Service**: Los routers no contienen lógica de negocio, solo validan y delegan a services.
-- **ExcelRepository**: Singleton en `repositories/instances.py`. Nunca instanciar directamente, importar `data_repo`, `consulta_repo`, `tags_repo`.
+- **Repository**: Para nuevo código, usar `Depends(get_data_repo)` de `repositories/factory.py`. Para código existente, `instances.py` sigue funcionando (auto-switch por `STORAGE_BACKEND`).
 - **JSON persistido**: Usar `json_store.read_json/write_json` (file locking + escritura atómica). No abrir archivos JSON manualmente.
-- **Auth**: JWT via `auth_middleware.py`. Endpoints protegidos usan `Depends(get_current_user)`.
+- **Auth**: JWT via `auth_middleware.py`. Endpoints protegidos usan `Depends(get_current_user)`. Payload incluye `tenant_id`.
 - **Config**: Constantes y usuarios en `utils/config.py`. Env vars en `.env`.
 - **API prefix**: `/api/v1/`
+- **Tenant-aware services**: Todos los servicios que acceden datos deben filtrar por `tenant_id`.
 - **Scheduled jobs**: APScheduler en `main.py` lifespan (backup diario, polling IMAP cada 15min, reclamaciones jueves, resumen semanal lunes, PDF mensual día 1).
 
-## Datos Excel
+## Datos
 
+**Modo Excel** (STORAGE_BACKEND=excel):
 - **data_erp.xlsx**: Datos maestros ERP. Columna `Repsonsable` (typo intencional) = responsable del documento.
 - **consulta_erp.xlsx**: Consultas comerciales. `Responsable` = comercial del pedido (NO es el mismo campo).
 - `Estado == ""` equivale a "sin enviar" → incluido en `ESTADOS_PENDIENTES`.
+
+**Modo PostgreSQL** (STORAGE_BACKEND=postgres):
+- Documents/Consultas/Tags almacenados como JSONB — preserva nombres de columna exactos del Excel.
+- Datos estructurados (users, agenda, claims, etc.) en tablas con columnas tipadas.
 
 ## Workflow de Claude Code
 

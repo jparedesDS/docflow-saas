@@ -19,6 +19,11 @@ export const ROLES = {
     initials_fallback: "EA",
     tools: [],
   },
+  "admin": {
+    color: "#4F46E5",
+    initials_fallback: "AD",
+    tools: ["comunicaciones", "informes", "configuracion"],
+  },
 };
 
 export const LOGIN_USERS = [
@@ -33,10 +38,12 @@ export const LOGIN_USERS = [
   { username: "laura.minguez",    name: "Laura Minguez",    initials: "LM",  role: "Comercial"           },
 ];
 
-function LoginScreen() {
+function LoginScreen({ onShowRegister }) {
   const { t } = useI18n();
+  const [mode, setMode] = useState("select"); // "select" | "password" | "email"
   const [selected, setSelected] = useState(null);
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -44,18 +51,28 @@ function LoginScreen() {
     setSelected(u);
     setPassword("");
     setError(false);
+    setMode("password");
+  };
+
+  const handleEmailMode = () => {
+    setMode("email");
+    setEmail("");
+    setPassword("");
+    setError(false);
   };
 
   const handleConfirm = async () => {
-    if (!selected || !password) return;
+    const username = mode === "email" ? email : selected?.username;
+    if (!username || !password) return;
+
     setLoading(true);
     setError(false);
     try {
-      const res = await api.post("/auth/login", {
-        username: selected.username,
-        password,
-      });
+      const res = await api.post("/auth/login", { username, password });
       localStorage.setItem("docflow_token", res.data.token);
+      if (res.data.refresh_token) {
+        localStorage.setItem("docflow_refresh_token", res.data.refresh_token);
+      }
       localStorage.setItem("docflow_user", JSON.stringify(res.data.user));
       window.location.reload();
     } catch {
@@ -65,6 +82,12 @@ function LoginScreen() {
     }
   };
 
+  const handleBack = () => {
+    setSelected(null);
+    setMode("select");
+    setError(false);
+  };
+
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", background: "var(--bg-page)", padding: 24 }}>
@@ -72,47 +95,133 @@ function LoginScreen() {
       <div style={{ marginBottom: 32, textAlign: "center" }}>
         <h1 style={{ fontSize: 26, fontWeight: 800, color: "#FFF", marginBottom: 4 }}>DocFlow</h1>
         <p style={{ fontSize: 13, color: "#71717A" }}>
-          {selected ? t('loginPasswordPrompt') : t('loginSubtitle')}
+          {mode === "select" ? t('loginSubtitle') :
+           mode === "email" ? "Introduce tus credenciales" :
+           t('loginPasswordPrompt')}
         </p>
       </div>
 
-      {!selected ? (
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 12, width: "100%", maxWidth: 520,
-        }}>
-          {LOGIN_USERS.map(u => {
-            const color = ROLES[u.role]?.color || "#3B82F6";
-            return (
-              <motion.button
-                key={u.initials}
-                onClick={() => handleSelect(u)}
-                whileHover={{ scale: 1.04, y: -2 }}
-                whileTap={{ scale: 0.97 }}
-                className="card"
+      {mode === "select" ? (
+        <>
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 12, width: "100%", maxWidth: 520,
+          }}>
+            {LOGIN_USERS.map(u => {
+              const color = ROLES[u.role]?.color || "#3B82F6";
+              return (
+                <motion.button
+                  key={u.initials}
+                  onClick={() => handleSelect(u)}
+                  whileHover={{ scale: 1.04, y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="card"
+                  style={{
+                    padding: "16px 12px",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                    cursor: "pointer", transition: "border-color 0.15s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = color}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
+                >
+                  <div style={{
+                    width: 44, height: 44, borderRadius: "50%",
+                    backgroundColor: color,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#FFF", fontSize: 13, fontWeight: 700,
+                  }}>
+                    {u.initials}
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#FFF", marginBottom: 2 }}>{u.name}</p>
+                    <p style={{ fontSize: 10, color: "#71717A" }}>{u.role}</p>
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+
+          {/* Multi-tenant login options */}
+          <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <button
+              onClick={handleEmailMode}
+              style={{
+                background: "transparent",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "9px 24px",
+                color: "#71717A",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Iniciar sesión con email
+            </button>
+            {onShowRegister && (
+              <button
+                onClick={onShowRegister}
                 style={{
-                  padding: "16px 12px",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                  cursor: "pointer", transition: "border-color 0.15s",
+                  background: "transparent",
+                  border: "none",
+                  color: "#6366F1",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  padding: "4px 0",
                 }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = color}
-                onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
               >
-                <div style={{
-                  width: 44, height: 44, borderRadius: "50%",
-                  backgroundColor: color,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "#FFF", fontSize: 13, fontWeight: 700,
-                }}>
-                  {u.initials}
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: "#FFF", marginBottom: 2 }}>{u.name}</p>
-                  <p style={{ fontSize: 10, color: "#71717A" }}>{u.role}</p>
-                </div>
-              </motion.button>
-            );
-          })}
+                Crear nueva organización
+              </button>
+            )}
+          </div>
+        </>
+      ) : mode === "email" ? (
+        <div className="bg-card border border-border" style={{ borderRadius: 16, padding: 28, width: "100%", maxWidth: 320 }}>
+          <input
+            type="text"
+            autoFocus
+            value={email}
+            onChange={e => { setEmail(e.target.value); setError(false); }}
+            placeholder="usuario"
+            className="rounded-lg"
+            style={{
+              width: "100%", padding: "9px 12px",
+              border: `1px solid ${error ? "#DC2626" : "var(--border)"}`,
+              background: "var(--bg-page)", color: "#FFF", fontSize: 13,
+              outline: "none", boxSizing: "border-box", marginBottom: 10,
+            }}
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={e => { setPassword(e.target.value); setError(false); }}
+            onKeyDown={e => e.key === "Enter" && handleConfirm()}
+            placeholder={t('loginPassword')}
+            className="rounded-lg"
+            style={{
+              width: "100%", padding: "9px 12px",
+              border: `1px solid ${error ? "#DC2626" : "var(--border)"}`,
+              background: "var(--bg-page)", color: "#FFF", fontSize: 13,
+              outline: "none", boxSizing: "border-box", marginBottom: 6,
+            }}
+          />
+          {error && <p style={{ fontSize: 11, color: "#DC2626", marginBottom: 10 }}>{t('loginWrongPassword')}</p>}
+
+          <div style={{ display: "flex", gap: 8, marginTop: error ? 4 : 10 }}>
+            <button onClick={handleBack}
+              className="border border-border rounded-lg"
+              style={{ flex: 1, padding: "9px 0", background: "transparent",
+                color: "#71717A", fontSize: 13, cursor: "pointer" }}>
+              {t('loginBack')}
+            </button>
+            <button onClick={handleConfirm} disabled={loading}
+              className="rounded-lg"
+              style={{ flex: 2, padding: "9px 0",
+                background: "#4F46E5",
+                border: "none", color: "#FFF", fontWeight: 700, fontSize: 13,
+                cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}>
+              {loading ? t('loginEntering') : t('loginEnter')}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-card border border-border" style={{ borderRadius: 16, padding: 28, width: "100%", maxWidth: 320 }}>
@@ -149,7 +258,7 @@ function LoginScreen() {
           {error && <p style={{ fontSize: 11, color: "#DC2626", marginBottom: 10 }}>{t('loginWrongPassword')}</p>}
 
           <div style={{ display: "flex", gap: 8, marginTop: error ? 4 : 10 }}>
-            <button onClick={() => setSelected(null)}
+            <button onClick={handleBack}
               className="border border-border rounded-lg"
               style={{ flex: 1, padding: "9px 0", background: "transparent",
                 color: "#71717A", fontSize: 13, cursor: "pointer" }}>

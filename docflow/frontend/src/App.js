@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sun, Moon, List as ListIcon, X,
@@ -8,21 +8,27 @@ import {
 } from "@phosphor-icons/react";
 import api from "./services/api";
 import LoginScreen, { ROLES } from "./components/LoginScreen";
-import Dashboard from "./pages/Dashboard";
-import ProjectsHub from "./pages/ProjectsHub";
-import DocumentsHub from "./pages/DocumentsHub";
-import Communications from "./pages/Communications";
-import ReportsHub from "./pages/ReportsHub";
-import ErpHub from "./pages/ErpHub";
-import WorkflowsHub from "./pages/WorkflowsHub";
-import Settings from "./pages/Settings";
-import Agenda from "./pages/Agenda";
-import Notifications from "./pages/Notifications";
+import LoadingSpinner from "./components/LoadingSpinner";
 import SearchBar from "./components/SearchBar";
 import Breadcrumbs from "./components/Breadcrumbs";
 import { useTheme } from "./contexts/ThemeContext";
 import { useI18n } from "./contexts/I18nContext";
+import { useTenant } from "./contexts/TenantContext";
 import { timeAgo } from "./utils/dates";
+
+/* ── Lazy-loaded pages ───────────────────────────────── */
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const ProjectsHub = lazy(() => import("./pages/ProjectsHub"));
+const DocumentsHub = lazy(() => import("./pages/DocumentsHub"));
+const Communications = lazy(() => import("./pages/Communications"));
+const ReportsHub = lazy(() => import("./pages/ReportsHub"));
+const ErpHub = lazy(() => import("./pages/ErpHub"));
+const WorkflowsHub = lazy(() => import("./pages/WorkflowsHub"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Agenda = lazy(() => import("./pages/Agenda"));
+const Notifications = lazy(() => import("./pages/Notifications"));
+const Register = lazy(() => import("./pages/Register"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
 /* ── Sidebar navigation items ─────────────────────────────── */
 
@@ -87,6 +93,9 @@ function SidebarItem({ item, active, open, onClick, t, badge }) {
 /* ── Workspace Switcher ───────────────────────────────────── */
 
 function WorkspaceSwitcher({ open }) {
+  const tenant = useTenant();
+  const initial = (tenant.name || "D")[0].toUpperCase();
+
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 10,
@@ -98,7 +107,7 @@ function WorkspaceSwitcher({ open }) {
         display: "flex", alignItems: "center", justifyContent: "center",
         color: "#FFF", fontSize: 14, fontWeight: 800,
       }}>
-        E
+        {initial}
       </div>
       {open && (
         <motion.div
@@ -109,11 +118,11 @@ function WorkspaceSwitcher({ open }) {
           style={{ flex: 1, minWidth: 0 }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9" }}>EIPSA</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9" }}>{tenant.name || "DocFlow"}</span>
             <CaretDown size={10} style={{ color: "#64748B" }} />
           </div>
           <p style={{ fontSize: 9, color: "#64748B", letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
-            DocFlow
+            {tenant.plan || "DocFlow"}
           </p>
         </motion.div>
       )}
@@ -127,6 +136,7 @@ function UserPanel({ user, roleConfig, onClose }) {
   const { t } = useI18n();
   const handleLogout = () => {
     localStorage.removeItem("docflow_token");
+    localStorage.removeItem("docflow_refresh_token");
     localStorage.removeItem("docflow_user");
     window.location.reload();
   };
@@ -336,6 +346,7 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
+    if (!user) return;
     const fetchNotifs = async () => {
       try {
         const res = await api.get("/notifications/?limit=8");
@@ -349,7 +360,7 @@ export default function App() {
     fetchNotifs();
     const interval = setInterval(fetchNotifs, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
   const openNotifPanel = () => {
     setShowNotifPanel(v => !v);
@@ -387,7 +398,18 @@ export default function App() {
     return () => document.removeEventListener("keydown", handler);
   }, [handleNavigate]);
 
-  if (!user) return <LoginScreen />;
+  const [showRegister, setShowRegister] = useState(false);
+
+  if (!user) {
+    if (showRegister) {
+      return (
+        <Suspense fallback={<LoadingSpinner />}>
+          <Register onBack={() => setShowRegister(false)} />
+        </Suspense>
+      );
+    }
+    return <LoginScreen onShowRegister={() => setShowRegister(true)} />;
+  }
 
   const roleConfig = ROLES[user.role] || ROLES["Document Controller"];
 
@@ -478,6 +500,7 @@ export default function App() {
         {/* Topbar — 56px */}
         <header className="h-14 flex items-center justify-between px-6 shrink-0 bg-card"
           style={{ borderBottom: "1px solid var(--border)" }}
+          role="banner" aria-label="Top navigation"
         >
           <motion.div
             key={activeSection}
@@ -593,16 +616,19 @@ export default function App() {
         </AnimatePresence>
 
         {/* Content */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="flex-1 p-6 overflow-auto" role="main" aria-live="polite">
           <div style={{ maxWidth: 1400, margin: "0 auto" }}>
-            {activeSection === "inicio" && <Dashboard onNavigate={setActiveSection} />}
-            {activeSection === "proyectos" && <ProjectsHub canExport={user.role === "Document Controller"} onTabChange={setActiveSubTab} />}
-            {activeSection === "documentos" && <DocumentsHub canExport={user.role === "Document Controller"} onTabChange={setActiveSubTab} />}
-            {activeSection === "comunicaciones" && <Communications onTabChange={setActiveSubTab} />}
-            {activeSection === "informes" && <ReportsHub onTabChange={setActiveSubTab} />}
-            {activeSection === "erp" && <ErpHub onTabChange={setActiveSubTab} />}
-            {activeSection === "flujos" && <WorkflowsHub onTabChange={setActiveSubTab} />}
-            {activeSection === "configuracion" && <Settings user={user} onTabChange={setActiveSubTab} />}
+            <Suspense fallback={<LoadingSpinner />}>
+              {activeSection === "inicio" && <Dashboard onNavigate={setActiveSection} />}
+              {activeSection === "proyectos" && <ProjectsHub canExport={user.role === "Document Controller"} onTabChange={setActiveSubTab} />}
+              {activeSection === "documentos" && <DocumentsHub canExport={user.role === "Document Controller"} onTabChange={setActiveSubTab} />}
+              {activeSection === "comunicaciones" && <Communications onTabChange={setActiveSubTab} />}
+              {activeSection === "informes" && <ReportsHub onTabChange={setActiveSubTab} />}
+              {activeSection === "erp" && <ErpHub onTabChange={setActiveSubTab} />}
+              {activeSection === "flujos" && <WorkflowsHub onTabChange={setActiveSubTab} />}
+              {activeSection === "configuracion" && <Settings user={user} onTabChange={setActiveSubTab} />}
+              {activeSection === "admin" && <AdminDashboard />}
+            </Suspense>
           </div>
         </main>
       </div>

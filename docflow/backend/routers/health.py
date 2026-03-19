@@ -46,8 +46,15 @@ def _check_disk(path: str) -> dict:
         return {"status": "fail", "error": str(e)}
 
 
+@router.get("/liveness")
+def liveness():
+    """Simple liveness probe — always returns 200 if the process is alive."""
+    return {"status": "ok"}
+
+
 @router.get("/")
-def health_check():
+def readiness():
+    """Readiness probe — checks data files and disk space."""
     checks = {
         "data_erp": _check_file(DATA_ERP_PATH),
         "consulta_erp": _check_file(CONSULTA_ERP_PATH),

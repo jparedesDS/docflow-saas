@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.env
+logs/
+backups/
+*.lock
+*.tmp
+.pytest_cache

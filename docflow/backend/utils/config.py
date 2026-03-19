@@ -36,6 +36,22 @@ DOCUSIGN_ACCOUNT_ID = os.getenv("DOCUSIGN_ACCOUNT_ID", "")
 DOCUSIGN_BASE_URL = os.getenv("DOCUSIGN_BASE_URL", "https://demo.docusign.net")
 DOCUSIGN_RSA_PRIVATE_KEY_PATH = os.getenv("DOCUSIGN_RSA_PRIVATE_KEY_PATH", "docusign_private.pem")
 
+# CORS
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+
+# Environment
+ENV = os.getenv("ENV", "development")
+
+# Backup destination (portable default)
+BACKUP_DEST = os.getenv("BACKUP_DEST", os.path.join(BASE_DIR, "backups"))
+
+# Base path for pedidos folders (optional, only for network-attached storage)
+PEDIDOS_BASE_PATH = os.getenv("PEDIDOS_BASE_PATH", r"M:\base de datos de pedidos")
+
 # API
 API_VERSION = "v1"
 

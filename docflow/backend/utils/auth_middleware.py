@@ -23,6 +23,7 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
         "username": payload["sub"],
         "role": payload["role"],
         "initials": payload["initials"],
+        "tenant_id": payload.get("tenant_id", 1),
     }
 
 

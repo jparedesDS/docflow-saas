@@ -89,6 +89,10 @@ docflow/backend/services/_temp_monthly.py
 # Config local MCP
 .mcp.json
 
+# Alembic auto-generated migration cache
+docflow/backend/alembic/__pycache__/
+docflow/backend/alembic/versions/__pycache__/
+
 # Repos externos clonados en el directorio
 taste-skill/
 email-best-practices/

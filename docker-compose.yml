@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: docflow
+      POSTGRES_USER: docflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docflow}
+    volumes:
+      - docflow-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - docflow-redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docflow/backend/Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./data_erp.xlsx:/app/data_erp.xlsx
+      - ./consulta_erp.xlsx:/app/consulta_erp.xlsx
+      - ./data_tags.xlsx:/app/data_tags.xlsx
+      - docflow-backups:/app/backups
+      - docflow-logs:/app/logs
+    env_file:
+      - docflow/backend/.env
+    environment:
+      - ENV=production
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-excel}
+      - DATABASE_URL=postgresql://docflow:${POSTGRES_PASSWORD:-docflow}@postgres:5432/docflow
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docflow/frontend/Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  docflow-pgdata:
+  docflow-redis:
+  docflow-backups:
+  docflow-logs:

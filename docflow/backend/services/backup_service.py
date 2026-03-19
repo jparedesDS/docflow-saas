@@ -4,14 +4,9 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-from utils.config import BASE_DIR
+from utils.config import BASE_DIR, BACKUP_DEST
 
 logger = logging.getLogger(__name__)
-
-BACKUP_DEST = os.getenv(
-    "BACKUP_DEST",
-    r"M:\Comunes\JOSE\BACKUPS\DocFlow",
-)
 
 FILES_TO_BACKUP = [
     "data_erp.xlsx",
