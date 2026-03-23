@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Sun, Moon, List as ListIcon, X,
   SignOut, Bell, Gear, CaretDown,
-  House, Briefcase, FolderOpen,
+  House, Briefcase, FolderOpen, ChatCircleDots,
   ChartBar, Database, Lightning, CalendarBlank, Toolbox,
 } from "@phosphor-icons/react";
 import api from "./services/api";
@@ -30,6 +30,7 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const Register = lazy(() => import("./pages/Register"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const ToolsHub = lazy(() => import("./pages/ToolsHub"));
+const Communications = lazy(() => import("./pages/Communications"));
 const ClientPortal = lazy(() => import("./pages/ClientPortal"));
 
 /* ── Sidebar navigation items ─────────────────────────────── */
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { key: "inicio",           icon: House,          labelKey: "navInicio" },
   { key: "proyectos",        icon: Briefcase,      labelKey: "navProyectos" },
   { key: "documentos",       icon: FolderOpen,     labelKey: "navDocumentos" },
+  { key: "comunicaciones",   icon: ChatCircleDots, labelKey: "navComunicaciones" },
   { key: "informes",         icon: ChartBar,       labelKey: "navInformes" },
   { key: "erp",              icon: Database,        labelKey: "navErp" },
   { key: "flujos",           icon: Lightning,       labelKey: "navFlujos" },
@@ -452,7 +454,7 @@ export default function App() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
 
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        const keyMap = { "1": "inicio", "2": "proyectos", "3": "documentos", "4": "informes", "5": "erp", "6": "flujos", "7": "herramientas" };
+        const keyMap = { "1": "inicio", "2": "proyectos", "3": "documentos", "4": "comunicaciones", "5": "informes", "6": "erp", "7": "flujos", "8": "herramientas" };
         if (keyMap[e.key]) {
           e.preventDefault();
           handleNavigate(keyMap[e.key]);
@@ -736,6 +738,7 @@ export default function App() {
               {activeSection === "inicio" && <Dashboard onNavigate={setActiveSection} />}
               {activeSection === "proyectos" && <ProjectsHub canExport={user.role === "Document Controller" || user.role === "admin"} onTabChange={setActiveSubTab} />}
               {activeSection === "documentos" && <DocumentsHub canExport={user.role === "Document Controller" || user.role === "admin"} onTabChange={setActiveSubTab} />}
+              {activeSection === "comunicaciones" && <Communications onTabChange={setActiveSubTab} />}
               {activeSection === "informes" && <ReportsHub onTabChange={setActiveSubTab} />}
               {activeSection === "erp" && <ErpHub onTabChange={setActiveSubTab} />}
               {activeSection === "flujos" && <WorkflowsHub onTabChange={setActiveSubTab} />}

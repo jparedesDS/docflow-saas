@@ -44,8 +44,10 @@ async def get_audit_log(
             date_to=date_to,
             limit=limit,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/recent")
@@ -60,8 +62,10 @@ async def get_recent_audit_log(
     tenant_id = current_user.get("tenant_id", 1)
     try:
         return get_recent_activity(tenant_id=tenant_id, limit=20)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/document/{doc_ref}")
@@ -81,5 +85,7 @@ async def get_document_audit_log(
             entity_type="document",
             entity_id=doc_ref,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

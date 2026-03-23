@@ -55,8 +55,10 @@ async def list_api_keys(
 
     try:
         return get_keys(tenant_id=tenant_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/")
@@ -80,10 +82,12 @@ async def create_api_key(
             expires_days=body.expires_days,
             created_by=current_user.get("initials", ""),
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{key_id}")
@@ -102,7 +106,9 @@ async def revoke_api_key(
     try:
         delete_key(tenant_id=tenant_id, key_id=key_id)
         return {"detail": "API key revoked"}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

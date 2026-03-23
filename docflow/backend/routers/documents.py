@@ -1,9 +1,12 @@
+import structlog
 from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Depends
 from typing import Optional, List, Dict, Any
 from services.document_service import DocumentService
 from services.monitoring_service import MonitoringService
 from repositories.instances import data_repo, consulta_repo
 from utils.auth_middleware import get_current_user, require_scope, SCOPE_WRITE
+
+logger = structlog.get_logger("docflow.routers.documents")
 
 router = APIRouter()
 
@@ -84,8 +87,8 @@ def create_document(data: Dict[str, Any], current_user: dict = Depends(require_s
         )
         from services.workflow_engine import on_event
         on_event(tenant_id, "document_received", {"document_ref": doc_id, "document": result})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("create_document_side_effects_failed", doc_id=doc_id, error=str(exc))
     return result
 
 
@@ -127,8 +130,8 @@ def update_document(doc_id: str, data: Dict[str, Any], current_user: dict = Depe
             "document_ref": doc_id,
             "changes": data,
         })
-    except Exception:
-        pass  # Non-critical — don't fail the update
+    except Exception as exc:
+        logger.warning("update_document_side_effects_failed", doc_id=doc_id, error=str(exc))
 
     return result
 
@@ -168,8 +171,8 @@ def batch_action(body: Dict[str, Any], current_user: dict = Depends(require_scop
                                 user_initials=current_user.get("initials", ""),
                                 user_name=current_user.get("username", ""),
                             )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.warning("batch_audit_log_failed", doc_id=doc_id, error=str(exc))
                     else:
                         results["failed"] += 1
             elif action == "assign_responsible":
@@ -199,6 +202,27 @@ def delete_document(doc_id: str, current_user: dict = Depends(require_scope(SCOP
     return {"detail": "Eliminado"}
 
 
+from utils.upload_config import MAX_UPLOAD_SIZE, ALLOWED_MIME_TYPES
+
+
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
-    return await service.process_upload(file)
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_scope(SCOPE_WRITE)),
+):
+    # ── Validate MIME type before reading body ────────────────────
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"File type not allowed: {file.content_type}",
+        )
+
+    # ── Read and validate size ────────────────────────────────────
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large — max {MAX_UPLOAD_SIZE // (1024 * 1024)} MB",
+        )
+
+    return {"filename": file.filename, "size": len(content), "status": "uploaded"}

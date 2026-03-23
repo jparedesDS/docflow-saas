@@ -33,25 +33,33 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_token(user_data: dict) -> str:
     """Create a JWT token.
 
-    user_data should contain: sub, role, initials, tenant_id
+    user_data must contain: sub, role, initials, tenant_id
+    Raises ValueError if tenant_id is missing.
     """
+    if "tenant_id" not in user_data or user_data["tenant_id"] is None:
+        raise ValueError("tenant_id is required")
     payload = {
         "sub": user_data["sub"],
         "role": user_data["role"],
         "initials": user_data["initials"],
-        "tenant_id": user_data.get("tenant_id", 1),
+        "tenant_id": user_data["tenant_id"],
         "exp": datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def create_refresh_token(user_data: dict) -> str:
-    """Create a long-lived refresh token."""
+    """Create a long-lived refresh token.
+
+    Raises ValueError if tenant_id is missing.
+    """
+    if "tenant_id" not in user_data or user_data["tenant_id"] is None:
+        raise ValueError("tenant_id is required")
     payload = {
         "sub": user_data["sub"],
         "role": user_data["role"],
         "initials": user_data["initials"],
-        "tenant_id": user_data.get("tenant_id", 1),
+        "tenant_id": user_data["tenant_id"],
         "type": "refresh",
         "exp": datetime.now(timezone.utc) + timedelta(hours=REFRESH_TOKEN_EXPIRE_HOURS),
     }

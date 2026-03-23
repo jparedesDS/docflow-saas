@@ -43,8 +43,10 @@ async def list_webhooks(
     tenant_id = current_user.get("tenant_id", 1)
     try:
         return get_webhooks(tenant_id=tenant_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/")
@@ -63,10 +65,12 @@ async def create_webhook(
             tenant_id=tenant_id,
             data=body.model_dump(),
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/{webhook_id}")
@@ -87,10 +91,12 @@ async def update_webhook(
             webhook_id=webhook_id,
             data=body.model_dump(),
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{webhook_id}")
@@ -107,10 +113,12 @@ async def delete_webhook(
     try:
         do_delete(tenant_id=tenant_id, webhook_id=webhook_id)
         return {"detail": "Webhook deleted"}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{webhook_id}/test")
@@ -127,7 +135,9 @@ async def test_webhook(
     try:
         result = send_test(tenant_id=tenant_id, webhook_id=webhook_id)
         return result
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

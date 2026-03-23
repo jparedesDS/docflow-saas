@@ -122,6 +122,10 @@ Usar skill `verification-before-completion` SIEMPRE antes de:
 
 Evidencia antes de afirmaciones. Ejecutar comandos de verificación y confirmar output.
 
+## Git
+
+- **NUNCA** incluir `Co-Authored-By` en commits. El único autor debe ser el usuario.
+
 ## Idioma
 
 Comunicación siempre en español. Código (variables, funciones) en inglés excepto nombres de dominio (`Reclamaciones`, `Pedido`, etc.).

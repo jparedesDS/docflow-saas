@@ -25,11 +25,15 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+    tenant_id = payload.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Token missing tenant_id")
+
     return {
         "username": payload["sub"],
         "role": payload["role"],
         "initials": payload["initials"],
-        "tenant_id": payload.get("tenant_id", 1),
+        "tenant_id": tenant_id,
         "scopes": payload.get("scopes", []),
     }
 

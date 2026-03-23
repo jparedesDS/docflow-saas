@@ -37,9 +37,10 @@ DOCUSIGN_BASE_URL = os.getenv("DOCUSIGN_BASE_URL", "https://demo.docusign.net")
 DOCUSIGN_RSA_PRIVATE_KEY_PATH = os.getenv("DOCUSIGN_RSA_PRIVATE_KEY_PATH", "docusign_private.pem")
 
 # CORS
+_DEFAULT_CORS = "http://localhost:3000,http://localhost:8000,http://10.80.200.150:3000,http://10.80.200.150:8000"
 CORS_ORIGINS = [
     o.strip()
-    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    for o in os.getenv("CORS_ORIGINS", _DEFAULT_CORS).split(",")
     if o.strip()
 ]
 

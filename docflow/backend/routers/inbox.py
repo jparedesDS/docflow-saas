@@ -47,8 +47,10 @@ def get_emails(
             folder=folder, filter=filter,
             imap_user=imap_email, imap_pass=imap_password,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/emails/{uid}")
@@ -65,8 +67,10 @@ def get_email_detail(
             uid=uid, folder=folder,
             imap_user=imap_email, imap_pass=imap_password,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/emails/{uid}/mark-read")
@@ -83,8 +87,10 @@ def mark_read(
             uid=uid, folder=folder,
             imap_user=imap_email, imap_pass=imap_password,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/ai-chat")
@@ -97,5 +103,7 @@ def ai_chat(body: AIChatRequest, current_user: dict = Depends(get_current_user))
             context_body=body.context_body or "",
         )
         return {"reply": reply}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

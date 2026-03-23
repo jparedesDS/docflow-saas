@@ -47,5 +47,7 @@ def send_claim(pedido: str, body: SendClaimRequest):
         return claim_service.send_claim(pedido, body.to, body.cc)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error enviando reclamación: {e}")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error enviando reclamación")

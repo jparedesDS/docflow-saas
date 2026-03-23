@@ -1,3 +1,4 @@
+import re
 import sys
 import os
 
@@ -8,8 +9,8 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
 from apscheduler.schedulers.background import BackgroundScheduler
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -87,6 +88,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
 
@@ -129,10 +132,6 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
             return await call_next(request)
 
-        # Allow OPTIONS (CORS preflight)
-        if request.method == "OPTIONS":
-            return await call_next(request)
-
         # Try API Key auth first (X-API-Key header)
         api_key_header = request.headers.get("x-api-key", "")
         if api_key_header:
@@ -148,8 +147,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                         "scopes": key_info["scopes"],
                     }
                     return await call_next(request)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("api_key_validation_failed", error=str(exc))
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid API key"},
@@ -167,11 +166,17 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         try:
             payload = verify_token(token)
             # Attach user info to request state for downstream use
+            tenant_id = payload.get("tenant_id")
+            if not tenant_id:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Token missing tenant_id"},
+                )
             request.state.user = {
                 "username": payload["sub"],
                 "role": payload["role"],
                 "initials": payload["initials"],
-                "tenant_id": payload.get("tenant_id", 1),
+                "tenant_id": tenant_id,
             }
         except Exception:
             return JSONResponse(
@@ -191,28 +196,85 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         user = getattr(request.state, "user", None)
         if user and user.get("tenant_id"):
-            from utils.rate_limit import api_limiter
+            from utils.rate_limit import api_limiter, PLAN_RATE_LIMITS
             # Determine plan
             plan = "enterprise"  # Default for existing tenants
             try:
                 from services.plan_service import get_plan
                 plan = get_plan(user["tenant_id"])
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("get_plan_failed", tenant_id=user["tenant_id"], error=str(exc))
 
             if api_limiter.is_rate_limited(user["tenant_id"], plan):
+                limit = PLAN_RATE_LIMITS.get(plan, PLAN_RATE_LIMITS["free"])
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Rate limit exceeded. Upgrade your plan for higher limits."},
+                    headers={
+                        "X-RateLimit-Limit": str(limit),
+                        "X-RateLimit-Remaining": "0",
+                        "X-RateLimit-Reset": str(api_limiter.window_seconds),
+                    },
                 )
 
             # Track API usage
             try:
                 from services.usage_service import increment_usage
                 increment_usage(user["tenant_id"], "api_calls")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("usage_tracking_failed", tenant_id=user["tenant_id"], error=str(exc))
 
+            response = await call_next(request)
+
+            # Add rate limit headers to successful responses
+            limit = PLAN_RATE_LIMITS.get(plan, PLAN_RATE_LIMITS["free"])
+            remaining = api_limiter.get_remaining(user["tenant_id"], plan)
+            response.headers["X-RateLimit-Limit"] = str(limit)
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
+            response.headers["X-RateLimit-Reset"] = str(api_limiter.window_seconds)
+            return response
+
+        return await call_next(request)
+
+
+# ── CORS preflight middleware (manual — replaces CORSMiddleware) ──────
+
+_LOCAL_NET = re.compile(
+    r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$"
+)
+_ALLOWED_ORIGINS = set(CORS_ORIGINS)
+
+_CORS_HEADERS = {
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-API-Key, X-Requested-With, X-Tenant-Id",
+    "Access-Control-Max-Age": "86400",
+}
+
+
+def _origin_allowed(origin: str) -> bool:
+    return origin in _ALLOWED_ORIGINS or bool(_LOCAL_NET.match(origin))
+
+
+class CORSPreflight(BaseHTTPMiddleware):
+    """Manual CORS handler: responds to OPTIONS and adds headers to every response."""
+
+    async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin", "")
+
+        if origin and _origin_allowed(origin):
+            if request.method == "OPTIONS":
+                resp = Response(status_code=204)
+                resp.headers["Access-Control-Allow-Origin"] = origin
+                resp.headers.update(_CORS_HEADERS)
+                return resp
+
+            response = await call_next(request)
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers.update(_CORS_HEADERS)
+            return response
+
+        # No origin or disallowed origin — pass through without CORS headers
         return await call_next(request)
 
 
@@ -221,13 +283,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(JWTAuthMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSPreflight)
 
 # ── Routers ─────────────────────────────────────────────────────
 

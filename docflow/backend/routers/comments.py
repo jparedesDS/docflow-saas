@@ -32,8 +32,10 @@ async def list_comments(
     tenant_id = current_user.get("tenant_id", 1)
     try:
         return get_comments(tenant_id=tenant_id, document_ref=doc_ref)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{doc_ref}")
@@ -56,10 +58,12 @@ async def create_comment(
             parent_id=body.parent_id,
             mentions=body.mentions,
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{comment_id}")
@@ -77,12 +81,14 @@ async def delete_comment(
             comment_id=comment_id,
         )
         return {"detail": "Comment deleted"}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{doc_ref}/count")
@@ -97,5 +103,7 @@ async def get_comment_count(
     try:
         count = count_comments(tenant_id=tenant_id, document_ref=doc_ref)
         return {"doc_ref": doc_ref, "count": count}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

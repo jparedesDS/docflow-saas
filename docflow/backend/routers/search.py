@@ -117,8 +117,10 @@ def natural_search(body: SearchQuery):
     except json.JSONDecodeError:
         # Fallback: text search only
         parsed = {"filters": {}, "text_search": body.query}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al consultar Claude: {e}")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al consultar Claude")
 
     filters = parsed.get("filters", {})
     text_search = parsed.get("text_search")

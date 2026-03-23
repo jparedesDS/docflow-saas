@@ -64,6 +64,17 @@ def auth_headers_tenant2():
 
 
 @pytest.fixture()
+def auth_headers_no_tenant():
+    """JWT without tenant_id — should be rejected."""
+    from jose import jwt
+    token = jwt.encode(
+        {"sub": "bad.user", "role": "admin", "initials": "BU"},
+        os.environ["JWT_SECRET"], algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
 def users_file(tmp_path):
     """Create a temporary users.json for testing."""
     users = {

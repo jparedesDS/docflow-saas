@@ -38,8 +38,10 @@ async def list_saved_filters(
             user_initials=user_initials,
             entity_type=entity_type,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/")
@@ -61,10 +63,12 @@ async def create_saved_filter(
             filters=body.filters,
             sort_config=body.sort_config,
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{filter_id}")
@@ -84,10 +88,12 @@ async def delete_saved_filter(
             user_initials=user_initials,
         )
         return {"detail": "Filter deleted"}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.patch("/{filter_id}/default")
@@ -106,7 +112,9 @@ async def set_default_filter(
             filter_id=filter_id,
             user_initials=user_initials,
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

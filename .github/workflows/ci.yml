@@ -27,19 +27,17 @@ jobs:
           cache: npm
           cache-dependency-path: docflow/frontend/package-lock.json
       - run: cd docflow/frontend && npm ci --silent
-      - run: cd docflow/frontend && npx eslint src/ --max-warnings 0 || true
+      - run: cd docflow/frontend && npx eslint src/ --max-warnings 0
 
-  build-frontend:
+  security-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: "18"
-          cache: npm
-          cache-dependency-path: docflow/frontend/package-lock.json
-      - run: cd docflow/frontend && npm ci --silent
-      - run: cd docflow/frontend && CI=false npm run build
+          python-version: "3.11"
+      - run: pip install bandit
+      - run: bandit -r docflow/backend/ -ll -ii --exclude docflow/backend/tests
 
   test-backend:
     runs-on: ubuntu-latest
@@ -49,4 +47,16 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: cd docflow/backend && python -m pytest tests/ -v
+      - run: cd docflow/backend && python -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=60
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: docflow/backend/.coverage
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --no-cache -f docflow/backend/Dockerfile .
+      - run: docker build --no-cache -f docflow/frontend/Dockerfile .
