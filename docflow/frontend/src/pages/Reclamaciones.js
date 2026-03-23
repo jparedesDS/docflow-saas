@@ -4,7 +4,7 @@ import api from "../services/api";
 import SkeletonCard from "../components/SkeletonCard";
 import PageHeader from "../components/PageHeader";
 import TopLoadingBar from "../components/TopLoadingBar";
-import { ArrowClockwise, CheckCircle, Warning, FileText, ClockCounterClockwise } from "@phosphor-icons/react";
+import { ArrowClockwise, CheckCircle, Warning, FileText, ClockCounterClockwise, ShieldWarning, Megaphone } from "@phosphor-icons/react";
 import Button from "../components/ui/Button";
 import { CLAIM_STATUS_COLORS as STATUS_COLORS } from "../constants/status";
 import { diffDaysFromNow } from "../utils/dates";
@@ -15,9 +15,15 @@ function getStatusStyle(status) {
 }
 
 const URGENCY = {
-  high:   { color: "#DC2626", label: ">60 días" },
-  medium: { color: "#D97706", label: ">30 días" },
-  low:    { color: "#CA8A04", label: ">15 días" },
+  high:   { color: "#DC2626", label: ">60 dias" },
+  medium: { color: "#D97706", label: ">30 dias" },
+  low:    { color: "#CA8A04", label: ">15 dias" },
+};
+
+const ESCALATION = {
+  1: { color: "#2563EB", bg: "#2563EB18", border: "#2563EB40", icon: Megaphone, labelKey: "reminder" },
+  2: { color: "#D97706", bg: "#D9770618", border: "#D9770640", icon: Warning, labelKey: "formalClaim" },
+  3: { color: "#DC2626", bg: "#DC262618", border: "#DC262640", icon: ShieldWarning, labelKey: "escalation" },
 };
 
 function validateEmails(str) {
@@ -63,7 +69,7 @@ export default function Reclamaciones() {
   const loadPedidos = async () => {
     setLoading(true); setError(null);
     try {
-      const res = await api.get("/claims/pedidos");
+      const res = await api.get("/claims/claimable-with-levels");
       setPedidos(res.data);
     } catch (err) {
       setError(err.response?.data?.detail || "Error cargando reclamaciones");
@@ -89,12 +95,15 @@ export default function Reclamaciones() {
     setPreviewLoading(false);
   };
 
+  const selectedEscalation = pedidos.find(p => p.pedido === selectedPedido)?.escalation_level || 1;
+  const escalationStyle = ESCALATION[selectedEscalation] || ESCALATION[1];
+
   const handleSend = async () => {
     setSending(true); setSendResult(null);
     try {
-      const to = toField.split(/[;,]/).map(s => s.trim()).filter(Boolean);
-      const cc = ccField.split(/[;,]/).map(s => s.trim()).filter(Boolean);
-      const res = await api.post(`/claims/${encodeURIComponent(selectedPedido)}/send`, { to, cc });
+      const res = await api.post(`/claims/${encodeURIComponent(selectedPedido)}/send-escalated`, {
+        level: selectedEscalation,
+      });
       setSendResult({ success: true, data: res.data });
       setShowModal(false);
       const nowIso = new Date().toISOString();
@@ -104,7 +113,13 @@ export default function Reclamaciones() {
       setHistory(prev => prev ? {
         ...prev,
         count: prev.count + 1,
-        entries: [...prev.entries, { sent_at: nowIso, to, cc, docs_count: res.data.docs_count }],
+        entries: [...prev.entries, {
+          sent_at: nowIso,
+          to: res.data.to,
+          cc: res.data.cc,
+          docs_count: res.data.docs_count,
+          level: res.data.level,
+        }],
       } : null);
       setPreview(null); setSelected(null);
     } catch (err) {
@@ -121,7 +136,7 @@ export default function Reclamaciones() {
     <PageHeader title={t("claimTitle")} description={t("claimDesc")} />
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4" style={{ minHeight: "calc(100vh - 260px)" }}>
 
-      {/* ─── Panel izquierdo: lista pedidos ─── */}
+      {/* --- Panel izquierdo: lista pedidos --- */}
       <div className="bg-card rounded-xl border border-border" style={{
         gridColumn: "span 1",
         overflow: "hidden",
@@ -218,6 +233,20 @@ export default function Reclamaciones() {
                       </span>
                     )}
                   </div>
+                  {/* Escalation level badge */}
+                  {p.escalation_level && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 4,
+                        background: (ESCALATION[p.escalation_level] || ESCALATION[1]).bg,
+                        color: (ESCALATION[p.escalation_level] || ESCALATION[1]).color,
+                        border: `1px solid ${(ESCALATION[p.escalation_level] || ESCALATION[1]).border}`,
+                        textTransform: "uppercase", letterSpacing: "0.04em",
+                      }}>
+                        {t("escalationLevel")} {p.escalation_level}: {t((ESCALATION[p.escalation_level] || ESCALATION[1]).labelKey)}
+                      </span>
+                    </div>
+                  )}
                 </motion.div>
               );
             })}
@@ -225,14 +254,14 @@ export default function Reclamaciones() {
         </div>
       </div>
 
-      {/* ─── Panel derecho: preview email ─── */}
+      {/* --- Panel derecho: preview email --- */}
       <div className="lg:col-span-3 bg-card rounded-xl border border-border" style={{
         gridColumn: "span 3",
         overflow: "hidden",
         display: "flex", flexDirection: "column",
       }}>
 
-        {/* Estado vacío */}
+        {/* Estado vacio */}
         {!selectedPedido && !sendResult && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -255,7 +284,7 @@ export default function Reclamaciones() {
           </div>
         )}
 
-        {/* Resultado envío */}
+        {/* Resultado envio */}
         {sendResult && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
             style={{ margin: 20, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -267,7 +296,7 @@ export default function Reclamaciones() {
               fontSize: 13, fontWeight: 600,
             }}>
               {sendResult.success
-                ? `Reclamación enviada — ${sendResult.data.docs_count} documento${sendResult.data.docs_count !== 1 ? "s" : ""}. Asunto: ${sendResult.data.subject}`
+                ? `Reclamacion enviada -- ${sendResult.data.docs_count} documento${sendResult.data.docs_count !== 1 ? "s" : ""}. Asunto: ${sendResult.data.subject}`
                 : `Error: ${sendResult.error}`}
             </div>
             {sendResult.success && sendResult.data.saved_path && (
@@ -276,7 +305,7 @@ export default function Reclamaciones() {
                 background: "#3B82F618", color: "#3B82F6",
                 border: "1px solid #3B82F640", fontSize: 11,
               }}>
-                ✓ Guardado en: <span style={{ fontFamily: "monospace", fontWeight: 700 }}>
+                Guardado en: <span style={{ fontFamily: "monospace", fontWeight: 700 }}>
                   {sendResult.data.saved_path.split(/[\\/]/).slice(-2).join("\\")}
                 </span>
               </div>
@@ -287,7 +316,7 @@ export default function Reclamaciones() {
                 background: "#D9770618", color: "#D97706",
                 border: "1px solid #D9770640", fontSize: 11,
               }}>
-                ⚠ No se encontró la carpeta del pedido en M:\
+                No se encontro la carpeta del pedido en M:\
               </div>
             )}
             {sendResult.success && sendResult.data.save_error && (
@@ -296,7 +325,7 @@ export default function Reclamaciones() {
                 background: "#DC262618", color: "#DC2626",
                 border: "1px solid #DC262640", fontSize: 11,
               }}>
-                ⚠ No se pudo guardar en disco: {sendResult.data.save_error}
+                No se pudo guardar en disco: {sendResult.data.save_error}
               </div>
             )}
           </motion.div>
@@ -307,12 +336,22 @@ export default function Reclamaciones() {
           <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
 
             {/* Cabecera */}
-            <div style={{ padding: "16px 16px", borderBottom: "1px solid var(--border)", borderLeft: "4px solid #DC2626" }}>
+            <div style={{ padding: "16px 16px", borderBottom: "1px solid var(--border)", borderLeft: `4px solid ${escalationStyle.color}` }}>
               <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 className="text-text-main" style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>
-                    {preview.pedido}
-                  </h3>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <h3 className="text-text-main" style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>
+                      {preview.pedido}
+                    </h3>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 4,
+                      background: escalationStyle.bg, color: escalationStyle.color,
+                      border: `1px solid ${escalationStyle.border}`,
+                      textTransform: "uppercase", letterSpacing: "0.04em",
+                    }}>
+                      {t("escalationLevel")} {selectedEscalation}: {t(escalationStyle.labelKey)}
+                    </span>
+                  </div>
                   <p className="text-text-muted" style={{ fontSize: 11, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {preview.subject}
                   </p>
@@ -337,8 +376,12 @@ export default function Reclamaciones() {
                     )}
                   </div>
                 </div>
-                <Button variant="danger" icon={Warning} onClick={() => setShowModal(true)}>
-                  {t("claimClaim")}
+                <Button
+                  variant={selectedEscalation >= 3 ? "danger" : selectedEscalation >= 2 ? "warning" : "primary"}
+                  icon={escalationStyle.icon}
+                  onClick={() => setShowModal(true)}
+                >
+                  {t("sendEscalated")}
                 </Button>
               </div>
             </div>
@@ -371,7 +414,7 @@ export default function Reclamaciones() {
                         onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "var(--bg-card)" : "var(--bg-page)"}>
                         <td className="text-text-sub" style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>{row.order_no}</td>
                         <td className="text-text-sub" style={{ padding: "6px 10px", whiteSpace: "nowrap", fontFamily: "monospace" }}>{row.po_no}</td>
-                        <td className="text-text-sub" style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>{row.client_doc_no || "—"}</td>
+                        <td className="text-text-sub" style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>{row.client_doc_no || "--"}</td>
                         <td className="text-text-sub" style={{ padding: "6px 10px", whiteSpace: "nowrap", fontFamily: "monospace" }}>{row.eipsa_doc_no}</td>
                         <td className="text-text-sub" style={{ padding: "6px 10px", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.title}</td>
                         <td style={{ padding: "6px 10px", whiteSpace: "nowrap", textAlign: "center" }}>
@@ -384,14 +427,14 @@ export default function Reclamaciones() {
                             {row.status}
                           </span>
                         </td>
-                        <td className="text-text-sub" style={{ padding: "6px 10px", textAlign: "center" }}>{row.revision || "—"}</td>
+                        <td className="text-text-sub" style={{ padding: "6px 10px", textAlign: "center" }}>{row.revision || "--"}</td>
                         <td className="text-text-muted" style={{ padding: "6px 10px", whiteSpace: "nowrap", fontFamily: "monospace" }}>
-                          {row.sent_date || "—"}
+                          {row.sent_date || "--"}
                         </td>
                         <td style={{ padding: "6px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
                           {daysAlert
                             ? <span style={{ fontWeight: 700, color: "#DC2626", background: "#DC262618", borderRadius: 4, padding: "2px 6px", fontSize: 10 }}>{row.return_days}</span>
-                            : <span className="text-text-muted">{row.return_days !== "" ? row.return_days : "—"}</span>
+                            : <span className="text-text-muted">{row.return_days !== "" ? row.return_days : "--"}</span>
                           }
                         </td>
                       </tr>
@@ -401,7 +444,7 @@ export default function Reclamaciones() {
               </table>
             </div>
 
-            {/* Historial acordeón */}
+            {/* Historial acordeon */}
             {history && history.count > 0 && (
               <div style={{ borderTop: "1px solid var(--border)" }}>
                 <div className="rounded-lg" style={{ margin: "8px 16px", background: "var(--bg-input)", padding: "12px 14px" }}>
@@ -427,23 +470,35 @@ export default function Reclamaciones() {
                           background: "var(--border)", borderRadius: 1,
                         }} />
                       )}
-                      {[...history.entries].reverse().map((entry, i) => (
-                        <div key={i} className="relative flex items-center gap-3" style={{ paddingBottom: i < history.entries.length - 1 ? 12 : 0 }}>
-                          <div style={{
-                            position: "absolute", left: -14, top: "50%", transform: "translateY(-50%)",
-                            width: 8, height: 8, borderRadius: "50%",
-                            backgroundColor: "#DC2626",
-                            boxShadow: "0 0 0 3px #DC262625",
-                          }} />
-                          <span className="text-text-main" style={{ fontSize: 11, fontWeight: 600 }}>
-                            {new Date(entry.sent_at).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" })}
-                          </span>
-                          <span className="text-text-muted" style={{ fontSize: 11 }}>{entry.docs_count} docs</span>
-                          <span className="text-text-muted" style={{ fontSize: 10, fontFamily: "monospace" }}>
-                            → {(entry.to || []).join(", ")}
-                          </span>
-                        </div>
-                      ))}
+                      {[...history.entries].reverse().map((entry, i) => {
+                        const entryLevel = entry.level || 1;
+                        const entryEsc = ESCALATION[entryLevel] || ESCALATION[1];
+                        return (
+                          <div key={i} className="relative flex items-center gap-3" style={{ paddingBottom: i < history.entries.length - 1 ? 12 : 0 }}>
+                            <div style={{
+                              position: "absolute", left: -14, top: "50%", transform: "translateY(-50%)",
+                              width: 8, height: 8, borderRadius: "50%",
+                              backgroundColor: entryEsc.color,
+                              boxShadow: `0 0 0 3px ${entryEsc.color}25`,
+                            }} />
+                            <span className="text-text-main" style={{ fontSize: 11, fontWeight: 600 }}>
+                              {new Date(entry.sent_at).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                            </span>
+                            <span style={{
+                              fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 3,
+                              background: entryEsc.bg, color: entryEsc.color,
+                              border: `1px solid ${entryEsc.border}`,
+                              textTransform: "uppercase",
+                            }}>
+                              L{entryLevel}
+                            </span>
+                            <span className="text-text-muted" style={{ fontSize: 11 }}>{entry.docs_count} docs</span>
+                            <span className="text-text-muted" style={{ fontSize: 10, fontFamily: "monospace" }}>
+                              -> {(entry.to || []).join(", ")}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -468,7 +523,7 @@ export default function Reclamaciones() {
         )}
       </div>
 
-      {/* ─── Modal reclamación ─── */}
+      {/* --- Modal reclamacion --- */}
       <AnimatePresence>
         {showModal && (
           <motion.div
@@ -486,42 +541,36 @@ export default function Reclamaciones() {
               onClick={e => e.stopPropagation()}>
 
               <h3 className="text-text-main" style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
-                {t("claimSendClaim")}
+                {t("sendEscalated")}
               </h3>
               <p className="text-text-muted" style={{ fontSize: 13, marginBottom: 16 }}>
                 {t("claimSendDesc")}
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div>
-                  <label className="text-text-muted" style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>{t("claimTo")}</label>
-                  <input type="text" value={toField} onChange={e => setToField(e.target.value)}
-                    className="input-field"
-                    style={invalidTo.length > 0 ? { borderColor: "#CA8A04" } : undefined}
-                    placeholder="email@cliente.com; email2@cliente.com" />
-                  {invalidTo.length > 0 && (
-                    <div style={{ marginTop: 4, padding: "6px 10px", background: "#CA8A0418", border: "1px solid #CA8A0440", borderRadius: 6, fontSize: 11, color: "#CA8A04" }}>
-                      {t("claimInvalidAddress")}: {invalidTo.join(", ")}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="text-text-muted" style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>{t("claimCc")}</label>
-                  <input type="text" value={ccField} onChange={e => setCcField(e.target.value)}
-                    className="input-field"
-                    style={invalidCc.length > 0 ? { borderColor: "#CA8A04" } : undefined}
-                    placeholder="cc@eipsa.es" />
-                  {invalidCc.length > 0 && (
-                    <div style={{ marginTop: 4, padding: "6px 10px", background: "#CA8A0418", border: "1px solid #CA8A0440", borderRadius: 6, fontSize: 11, color: "#CA8A04" }}>
-                      {t("claimInvalidCC")}: {invalidCc.join(", ")}
-                    </div>
-                  )}
+                {/* Escalation level indicator */}
+                <div className="rounded-lg" style={{
+                  padding: 12, fontSize: 13,
+                  background: escalationStyle.bg,
+                  border: `1px solid ${escalationStyle.border}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    {React.createElement(escalationStyle.icon, { size: 16, weight: "bold", style: { color: escalationStyle.color } })}
+                    <span style={{ fontWeight: 800, color: escalationStyle.color, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                      {t("escalationLevel")} {selectedEscalation}: {t(escalationStyle.labelKey)}
+                    </span>
+                  </div>
+                  <p className="text-text-muted" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                    {selectedEscalation === 1 && t("escalationDesc1")}
+                    {selectedEscalation === 2 && t("escalationDesc2")}
+                    {selectedEscalation === 3 && t("escalationDesc3")}
+                  </p>
                 </div>
 
                 {preview && (
-                  <div className="rounded-lg" style={{ background: "#DC262610", padding: 12, fontSize: 13, border: "1px solid #DC262630" }}>
+                  <div className="rounded-lg" style={{ background: escalationStyle.bg, padding: 12, fontSize: 13, border: `1px solid ${escalationStyle.border}` }}>
                     <p className="text-text-muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{t("claimSubjectPreview")}</p>
-                    <p style={{ color: "#DC2626", fontWeight: 700 }}>{preview.subject}</p>
+                    <p style={{ color: escalationStyle.color, fontWeight: 700 }}>{preview.subject}</p>
                     <p className="text-text-muted" style={{ marginTop: 4 }}>
                       {preview.docs_count} {t("claimDocsSentNoReply")}
                     </p>
@@ -534,13 +583,13 @@ export default function Reclamaciones() {
                   {t("cancel")}
                 </Button>
                 <Button
-                  variant="danger"
-                  icon={Warning}
+                  variant={selectedEscalation >= 3 ? "danger" : selectedEscalation >= 2 ? "warning" : "primary"}
+                  icon={escalationStyle.icon}
                   onClick={handleSend}
-                  disabled={sending || invalidTo.length > 0}
+                  disabled={sending}
                   loading={sending}
                 >
-                  {sending ? t("claimSending") : t("claimSend")}
+                  {sending ? t("claimSending") : t("sendEscalated")}
                 </Button>
               </div>
             </motion.div>

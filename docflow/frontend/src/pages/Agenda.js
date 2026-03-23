@@ -3,14 +3,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, PencilSimple, Trash, MagnifyingGlass,
   CalendarBlank, Clock, MapPin, User, Robot,
+  FileText, CheckCircle, ArrowClockwise, ListChecks,
 } from "@phosphor-icons/react";
 import { useI18n } from "../contexts/I18nContext";
+import { useToast } from "../contexts/ToastContext";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/ui/Modal";
 import Button from "../components/ui/Button";
 import Input, { Textarea, Select } from "../components/ui/Input";
 import api from "../services/api";
-import { formatDate } from "../utils/dates";
+import { formatDate, daysUntil } from "../utils/dates";
+import SimpleMarkdown from "../components/SimpleMarkdown";
 
 const NOTE_COLORS = [
   { key: "default", bg: "var(--bg-card)", label: "Default" },
@@ -31,11 +34,87 @@ function getEstadoLabels(t) {
   return { pendiente: t('agStatusPending'), en_progreso: t('agStatusInProgress'), completada: t('agStatusCompleted') };
 }
 
-function daysFromNow(dateStr) {
-  if (!dateStr) return null;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const d = new Date(dateStr); d.setHours(0,0,0,0);
-  return Math.round((d - today) / 86400000);
+
+// ─────────────────────────── ACTA VIEW MODAL ───────────────────────────
+function ActaView({ reunion, onClose, onCreateTasks, t }) {
+  const acta = reunion.acta || "";
+  const decisiones = reunion.decisiones || [];
+  const acciones = reunion.acciones || [];
+
+  return (
+    <Modal title={t("mmMinutes") || "Acta de reunion"} onClose={onClose} maxWidth={720}>
+      <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+        {/* Acta markdown */}
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <SimpleMarkdown text={acta} />
+        </div>
+
+        {/* Decisiones */}
+        {decisiones.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <h3 className="text-text-main" style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+              <CheckCircle size={14} weight="bold" style={{ display: "inline", marginRight: 6 }} />
+              {t("mmDecisions") || "Decisiones"}
+            </h3>
+            <div className="card" style={{ padding: 12 }}>
+              {decisiones.map((d, i) => (
+                <div key={i} className="text-text-sub" style={{ fontSize: 13, padding: "4px 0", borderBottom: i < decisiones.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  {i + 1}. {d}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Acciones */}
+        {acciones.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <h3 className="text-text-main" style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+              <ListChecks size={14} weight="bold" style={{ display: "inline", marginRight: 6 }} />
+              {t("mmActions") || "Acciones"}
+            </h3>
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "var(--bg-page)" }}>
+                    <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Accion</th>
+                    <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Asignado</th>
+                    <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Fecha</th>
+                    <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Prioridad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {acciones.map((a, i) => {
+                    const pc = { alta: "#DC2626", media: "#D97706", baja: "#16A34A" }[a.prioridad] || "#6B7280";
+                    return (
+                      <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                        <td className="text-text-main" style={{ padding: "8px 12px", fontSize: 12 }}>{a.titulo}</td>
+                        <td className="text-text-sub" style={{ padding: "8px 12px", fontSize: 12 }}>{a.asignado}</td>
+                        <td className="text-text-sub" style={{ padding: "8px 12px", fontSize: 12 }}>{a.fecha_limite}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: pc + "20", color: pc, fontWeight: 700 }}>{a.prioridad}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 justify-end mt-4">
+        {acciones.length > 0 && (
+          <Button icon={ListChecks} onClick={() => onCreateTasks(acciones)}>
+            {t("mmCreateTasks") || "Crear tareas"}
+          </Button>
+        )}
+        <Button variant="secondary" onClick={onClose}>Cerrar</Button>
+      </div>
+    </Modal>
+  );
 }
 
 // ─────────────────────────── TAB NOTAS ───────────────────────────
@@ -183,12 +262,13 @@ function TabNotas({ compact }) {
 
 // ─────────────────────────── TAB REUNIONES ───────────────────────────
 
-function ReunionCard({ reunion, onEdit, onDelete, t }) {
-  const days = daysFromNow(reunion.fecha);
+function ReunionCard({ reunion, onEdit, onDelete, onViewActa, t }) {
+  const days = daysUntil(reunion.fecha);
   const badge = days === 0 ? { label: t('agToday'), color: "#16A34A" }
     : days === 1 ? { label: t('agTomorrow'), color: "#D97706" }
     : days !== null && days > 0 ? { label: t('agInDays').replace('{n}', days), color: "#3B82F6" }
     : null;
+  const hasActa = !!reunion.acta;
 
   return (
     <motion.div
@@ -200,9 +280,19 @@ function ReunionCard({ reunion, onEdit, onDelete, t }) {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-text-main" style={{ fontWeight: 700, fontSize: 14 }}>{reunion.titulo}</p>
             {badge && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: badge.color + "30", color: badge.color, fontWeight: 700 }}>{badge.label}</span>}
+            {hasActa && (
+              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: "#16A34A20", color: "#16A34A", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <FileText size={10} /> Acta
+              </span>
+            )}
           </div>
         </div>
         <div className="flex gap-1">
+          {hasActa && (
+            <button onClick={() => onViewActa(reunion)} className="btn-ghost p-0.5" title={t("mmMinutes") || "Ver acta"}>
+              <FileText size={14} style={{ color: "#16A34A" }} />
+            </button>
+          )}
           <button onClick={() => onEdit(reunion)} className="btn-ghost p-0.5"><PencilSimple size={14} /></button>
           <button onClick={() => onDelete(reunion.id)} className="btn-ghost p-0.5 text-red-500"><Trash size={14} /></button>
         </div>
@@ -240,7 +330,8 @@ function ReunionCard({ reunion, onEdit, onDelete, t }) {
   );
 }
 
-function ReunionModal({ reunion, onClose, onSaved }) {
+function ReunionModal({ reunion, onClose, onSaved, t }) {
+  const { showToast } = useToast();
   const [form, setForm] = useState({
     titulo: reunion?.titulo || "",
     fecha: reunion?.fecha || "",
@@ -249,8 +340,12 @@ function ReunionModal({ reunion, onClose, onSaved }) {
     asistentes: reunion?.asistentes?.join(", ") || "",
     descripcion: reunion?.descripcion || "",
     ubicacion: reunion?.ubicacion || "",
+    notas_reunion: reunion?.notas_reunion || "",
+    client_name: "",
   });
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [showActa, setShowActa] = useState(!!reunion?.acta);
 
   const save = async () => {
     if (!form.titulo.trim()) return;
@@ -260,6 +355,7 @@ function ReunionModal({ reunion, onClose, onSaved }) {
       titulo: form.titulo.trim(),
       asistentes: form.asistentes.split(",").map(a => a.trim()).filter(Boolean),
     };
+    delete payload.client_name; // Not persisted
     try {
       const res = reunion
         ? await api.put(`/agenda/reuniones/${reunion.id}`, payload)
@@ -268,20 +364,99 @@ function ReunionModal({ reunion, onClose, onSaved }) {
     } finally { setSaving(false); }
   };
 
+  const generateMinutes = async () => {
+    if (!form.notas_reunion.trim()) {
+      showToast(t("mmNoNotes") || "Escribe notas de la reunion para generar el acta", "warning");
+      return;
+    }
+    if (!reunion?.id) {
+      showToast("Guarda la reunion primero antes de generar el acta", "warning");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const res = await api.post(`/agenda/reuniones/${reunion.id}/generate-minutes`, {
+        notes: form.notas_reunion,
+        client_name: form.client_name || null,
+      });
+      onSaved(res.data, true);
+      showToast("Acta generada correctamente", "success");
+    } catch (err) {
+      showToast(err?.response?.data?.detail || "Error generando acta", "error");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   return (
-    <Modal title={reunion ? "Editar reunión" : "Nueva reunión"} onClose={onClose}>
-      <Input label="Título" value={form.titulo} onChange={set("titulo")} placeholder="Asunto de la reunión" className="mb-3.5" />
+    <Modal title={reunion ? "Editar reunion" : "Nueva reunion"} onClose={onClose} maxWidth={640}>
+      <Input label="Titulo" value={form.titulo} onChange={set("titulo")} placeholder="Asunto de la reunion" className="mb-3.5" />
       <div className="grid grid-cols-2 gap-3 mb-3.5">
         <Input label="Fecha" type="date" value={form.fecha} onChange={set("fecha")} />
-        <Input label="Ubicación" value={form.ubicacion} onChange={set("ubicacion")} placeholder="Sala, Teams, ..." />
+        <Input label="Ubicacion" value={form.ubicacion} onChange={set("ubicacion")} placeholder="Sala, Teams, ..." />
         <Input label="Hora inicio" type="time" value={form.hora_inicio} onChange={set("hora_inicio")} />
         <Input label="Hora fin" type="time" value={form.hora_fin} onChange={set("hora_fin")} />
       </div>
-      <Input label="Asistentes (separados por coma)" value={form.asistentes} onChange={set("asistentes")} placeholder="J. Paredes, L. García, ..." className="mb-3.5" />
-      <Textarea label="Descripción" value={form.descripcion} onChange={set("descripcion")} className="mb-3.5" />
-      <div className="flex gap-2 justify-end mt-2">
+      <Input label="Asistentes (separados por coma)" value={form.asistentes} onChange={set("asistentes")} placeholder="J. Paredes, L. Garcia, ..." className="mb-3.5" />
+      <Textarea label="Descripcion" value={form.descripcion} onChange={set("descripcion")} className="mb-3.5" />
+
+      {/* Meeting notes section */}
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
+        <div className="flex items-center gap-2 mb-2">
+          <Robot size={16} weight="bold" style={{ color: "var(--accent)" }} />
+          <span className="text-text-main" style={{ fontWeight: 700, fontSize: 13 }}>
+            {t("mmNotes") || "Notas de la reunion"}
+          </span>
+        </div>
+        <Textarea
+          value={form.notas_reunion}
+          onChange={set("notas_reunion")}
+          placeholder="Escribe apuntes durante la reunion... La IA los usara para generar el acta formal."
+          className="mb-3"
+          style={{ minHeight: 120 }}
+        />
+        <div className="flex gap-2 items-end mb-3">
+          <div className="flex-1">
+            <Input
+              label="Cliente (opcional, para contexto)"
+              value={form.client_name}
+              onChange={set("client_name")}
+              placeholder="Nombre del cliente para incluir datos del proyecto"
+            />
+          </div>
+          <Button
+            icon={generating ? ArrowClockwise : Robot}
+            onClick={generateMinutes}
+            loading={generating}
+            disabled={!form.notas_reunion.trim() || !reunion?.id}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            {generating ? (t("mmRegenerating") || "Generando...") : (t("mmGenerateMinutes") || "Generar acta con IA")}
+          </Button>
+        </div>
+
+        {/* Show existing acta preview */}
+        {reunion?.acta && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={() => setShowActa(!showActa)}
+              className="text-text-sub"
+              style={{ fontSize: 12, fontWeight: 600, cursor: "pointer", background: "none", border: "none", color: "var(--accent)" }}
+            >
+              {showActa ? "Ocultar acta" : "Ver acta generada"}
+            </button>
+            {showActa && (
+              <div className="card" style={{ padding: 12, marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
+                <SimpleMarkdown text={reunion.acta} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 justify-end mt-4">
         <Button variant="secondary" onClick={onClose}>Cancelar</Button>
         <Button onClick={save} loading={saving} disabled={!form.titulo.trim()}>Guardar</Button>
       </div>
@@ -290,9 +465,11 @@ function ReunionModal({ reunion, onClose, onSaved }) {
 }
 
 function TabReuniones({ owner, t }) {
+  const { showToast } = useToast();
   const [reuniones, setReuniones] = useState([]);
   const [filtro, setFiltro] = useState("proximas");
   const [modal, setModal] = useState(null);
+  const [actaModal, setActaModal] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
@@ -321,6 +498,25 @@ function TabReuniones({ owner, t }) {
     setReuniones(prev => prev.filter(r => r.id !== id));
   };
 
+  const handleCreateTasks = async (acciones) => {
+    let created = 0;
+    for (const accion of acciones) {
+      try {
+        await api.post("/agenda/tareas", {
+          titulo: accion.titulo,
+          descripcion: `Accion de reunion`,
+          prioridad: accion.prioridad || "media",
+          estado: "pendiente",
+          fecha_limite: accion.fecha_limite !== "Por definir" ? accion.fecha_limite : "",
+          asignado: accion.asignado !== "Por asignar" ? accion.asignado : owner,
+        }, { params: { owner } });
+        created++;
+      } catch { /* ignore individual failures */ }
+    }
+    showToast(`${created} tareas creadas desde el acta`, "success");
+    setActaModal(null);
+  };
+
   return (
     <div>
       <div className="flex gap-3 mb-5 items-center flex-wrap">
@@ -332,30 +528,41 @@ function TabReuniones({ owner, t }) {
         <div className="flex gap-1">
           {["proximas", "pasadas"].map(f => (
             <Button key={f} variant={filtro === f ? "primary" : "secondary"} size="sm" onClick={() => setFiltro(f)}>
-              {f === "proximas" ? "Próximas" : "Pasadas"}
+              {f === "proximas" ? "Proximas" : "Pasadas"}
             </Button>
           ))}
         </div>
         <div className="flex-1" />
-        <Button icon={Plus} onClick={() => setModal("new")}>Nueva reunión</Button>
+        <Button icon={Plus} onClick={() => setModal("new")}>Nueva reunion</Button>
       </div>
 
       {filtered.length === 0 ? (
         <div className="text-center text-text-muted" style={{ padding: 60 }}>
-          {filtro === "proximas" ? "No hay reuniones próximas." : "No hay reuniones pasadas."}
+          {filtro === "proximas" ? "No hay reuniones proximas." : "No hay reuniones pasadas."}
         </div>
       ) : (
         <div className="flex flex-col gap-3">
           <AnimatePresence>
             {filtered.map(r => (
-              <ReunionCard key={r.id} reunion={r} onEdit={setModal} onDelete={handleDelete} t={t} />
+              <ReunionCard key={r.id} reunion={r} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
             ))}
           </AnimatePresence>
         </div>
       )}
 
       <AnimatePresence>
-        {modal && <ReunionModal reunion={modal === "new" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} />}
+        {modal && <ReunionModal reunion={modal === "new" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} t={t} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {actaModal && (
+          <ActaView
+            reunion={actaModal}
+            onClose={() => setActaModal(null)}
+            onCreateTasks={handleCreateTasks}
+            t={t}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -365,7 +572,7 @@ function TabReuniones({ owner, t }) {
 
 function TareaCard({ tarea, onEdit, onDelete, onChangeEstado, t }) {
   const pc = PRIORIDAD_COLORS[tarea.prioridad] || { bg: "#6B7280", text: "#FFF" };
-  const days = daysFromNow(tarea.fecha_limite);
+  const days = daysUntil(tarea.fecha_limite);
   const overdue = days !== null && days < 0 && tarea.estado !== "completada";
 
   return (

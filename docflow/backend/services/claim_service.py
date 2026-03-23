@@ -9,15 +9,28 @@ from typing import Any
 import pandas as pd
 
 from services.monitoring_service import MonitoringService
-from services.parsers.base_parser import compute_recipients, get_responsable_email, _load_logo_b64
+from services.parsers.base_parser import (
+    compute_recipients, get_responsable_email, _load_logo_b64,
+    DEFAULT_TO, DEFAULT_CC, RESPONSABLE_PEDIDO_MAP,
+)
 from services.smtp_service import send_html_email
 from repositories.instances import data_repo, consulta_repo
-from utils.config import SMTP_USER, PEDIDOS_BASE_PATH
+from utils.config import SMTP_USER, PEDIDOS_BASE_PATH, USERS
 from utils.json_store import read_json, write_json
 
 CLAIMS_LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "claims_log.json")
 
 URGENCY_THRESHOLDS = {"low": 15, "medium": 30, "high": 60}
+
+# ─── Escalation levels ─────────────────────────────────────────────────────────
+
+ESCALATION_LEVELS = {
+    1: {"name": "reminder", "min_days": 15, "tone": "cort\u00e9s", "cc_level": "pm"},
+    2: {"name": "formal", "min_days": 30, "tone": "firme", "cc_level": "pm+direction"},
+    3: {"name": "escalation", "min_days": 60, "tone": "urgente", "cc_level": "pm+direction+commercial"},
+}
+
+DIRECTION_CC = ["enrique-serrano@eipsa.es"]
 
 
 # ─── Helpers de log ───────────────────────────────────────────────────────────
@@ -39,7 +52,7 @@ class ClaimService:
         self._consulta_repo = consulta_repo
         self._monitoring = MonitoringService(self._data_repo, self._consulta_repo)
 
-    def _get_claimable_docs(self) -> list[dict[str, Any]]:
+    def get_claimable_docs(self) -> list[dict[str, Any]]:
         """Devuelve todos los docs con Estado='Enviado' y Días Devolución >= 15."""
         all_docs = self._monitoring.get_monitoring_data()
         result = []
@@ -57,7 +70,7 @@ class ClaimService:
 
     def get_claimable_pedidos(self) -> list[dict[str, Any]]:
         """Lista de pedidos con documentos reclamables, ordenados por urgencia."""
-        docs = self._get_claimable_docs()
+        docs = self.get_claimable_docs()
         log = _load_log()
 
         # Agrupar por Nº Pedido (normalizado)
@@ -127,7 +140,7 @@ class ClaimService:
 
     def get_pedido_preview(self, pedido: str) -> dict[str, Any]:
         """Datos completos para el preview del email de un pedido."""
-        docs = self._get_claimable_docs()
+        docs = self.get_claimable_docs()
         pedido_docs = [
             d for d in docs
             if MonitoringService._normalize_pedido(
@@ -209,6 +222,356 @@ class ClaimService:
         else:
             history = entry["history"]
         return {"pedido": pedido, "count": len(history), "entries": history}
+
+    # ─── Escalation logic ────────────────────────────────────────────────────
+
+    def get_escalation_level(self, pedido_data: dict) -> int:
+        """Determine escalation level based on days and claim history."""
+        max_dias = pedido_data.get("max_dias", 0)
+        history = self.get_pedido_history(pedido_data.get("pedido", ""))
+        claim_count = history.get("count", 0)
+
+        # Level 3: 60+ days OR already claimed twice
+        if max_dias >= 60 or claim_count >= 2:
+            return 3
+        # Level 2: 30+ days OR already claimed once
+        if max_dias >= 30 or claim_count >= 1:
+            return 2
+        # Level 1: 15+ days (default)
+        return 1
+
+    def get_escalation_recipients(self, pedido_data: dict, level: int) -> tuple[list[str], list[str]]:
+        """Get TO and CC recipients based on escalation level."""
+        to = list(DEFAULT_TO)
+        cc = list(DEFAULT_CC)
+
+        # Add PM from RESPONSABLE_PEDIDO_MAP
+        pedido = pedido_data.get("pedido", "")
+        pm_email = RESPONSABLE_PEDIDO_MAP.get(pedido)
+        if pm_email and pm_email not in to and pm_email not in cc:
+            cc.append(pm_email)
+
+        if level >= 2:
+            for email in DIRECTION_CC:
+                if email not in cc:
+                    cc.append(email)
+
+        if level >= 3:
+            responsable = pedido_data.get("responsable", "")
+            if responsable in USERS:
+                resp_emails = USERS[responsable].get("emails", [])
+                for email in resp_emails:
+                    if email not in cc and email not in to:
+                        cc.append(email)
+
+        return to, cc
+
+    def send_escalated_claim(self, pedido: str, level: int = None) -> dict[str, Any]:
+        """Send claim with appropriate escalation level."""
+        pedidos = self.get_claimable_pedidos()
+        pedido_data = next((p for p in pedidos if p["pedido"] == pedido), None)
+        if not pedido_data:
+            return {"error": f"Pedido {pedido} not found or not claimable"}
+
+        if level is None:
+            level = self.get_escalation_level(pedido_data)
+
+        to, cc = self.get_escalation_recipients(pedido_data, level)
+
+        preview = self.get_pedido_preview(pedido)
+        html = self._build_escalated_html(preview, level)
+        subject = self._get_escalation_subject(pedido, preview.get("po", ""), level)
+
+        result = send_html_email(to, cc, subject, html)
+
+        # Log claim with level
+        self._log_escalated_claim(pedido, level, to, cc, preview["docs_count"])
+
+        return {
+            "success": True,
+            "level": level,
+            "level_name": ESCALATION_LEVELS[level]["name"],
+            "to": to,
+            "cc": cc,
+            "subject": subject,
+            "docs_count": preview["docs_count"],
+        }
+
+    def _log_escalated_claim(self, pedido: str, level: int, to: list, cc: list, docs_count: int):
+        """Log an escalated claim to claims_log.json."""
+        log = _load_log()
+        now_iso = datetime.now().isoformat()
+        existing = log.get(pedido, {})
+
+        if "history" not in existing:
+            history = []
+            if "sent_at" in existing:
+                history.append({
+                    "sent_at": existing["sent_at"],
+                    "to": existing.get("to", []),
+                    "cc": existing.get("cc", []),
+                    "docs_count": existing.get("docs_count", 0),
+                    "level": 1,
+                })
+        else:
+            history = existing["history"]
+
+        history.append({
+            "sent_at": now_iso,
+            "to": to,
+            "cc": cc,
+            "docs_count": docs_count,
+            "level": level,
+        })
+
+        log[pedido] = {
+            "last_claimed": now_iso,
+            "history": history,
+        }
+        _save_log(log)
+
+    @staticmethod
+    def _get_escalation_subject(pedido: str, po: str, level: int) -> str:
+        """Build subject line based on escalation level."""
+        if level == 1:
+            return f"REMINDER: {pedido} / PO: {po} // DOC. UNDER REVIEW"
+        elif level == 2:
+            return f"FORMAL CLAIM: {pedido} / PO: {po} // DOCUMENTS PENDING REVIEW"
+        else:
+            return f"URGENT ESCALATION: {pedido} / PO: {po} // IMMEDIATE ACTION REQUIRED"
+
+    def _build_escalated_html(self, preview: dict, level: int) -> str:
+        """Build HTML email with tone and colors based on escalation level."""
+        LEVEL_THEMES = {
+            1: {"accent": "#2563EB", "bg": "#EBF5FF", "label": "Document Review Reminder",
+                "border_top": "#2563EB"},
+            2: {"accent": "#D97706", "bg": "#FFFBEB", "label": "Formal Document Claim",
+                "border_top": "#D97706"},
+            3: {"accent": "#DC2626", "bg": "#FEF2F2", "label": "Urgent Escalation Notice",
+                "border_top": "#DC2626"},
+        }
+        theme = LEVEL_THEMES.get(level, LEVEL_THEMES[1])
+        NAVY = "#1B3A5C"
+
+        STATUS_EN = {
+            "Enviado": "Submitted", "Aprobado": "Approved",
+            "Rechazado": "Rejected", "En Revisi\u00f3n": "Under Review",
+            "Aprobado con Com.": "Approved w/ Comments",
+            "Aprobado con com. menores": "Approved w/ Min. Comments",
+        }
+
+        logo_b64 = _load_logo_b64()
+        logo_html = (
+            f'<img src="data:image/png;base64,{logo_b64}" alt="EIPSA" '
+            f'style="display:block;height:28px;width:auto;" />'
+            if logo_b64
+            else '<span style="color:#FFFFFF;font-size:15px;font-weight:700;">EIPSA</span>'
+        )
+
+        rows_html = ""
+        for i, row in enumerate(preview["table_rows"]):
+            bg_row = "#F4F7FC" if i % 2 == 0 else "#FFFFFF"
+            sep = "border-bottom:1px solid #DDE3F5;border-right:1px solid #DDE3F5;"
+            sep_last = "border-bottom:1px solid #DDE3F5;"
+            cell = (f"background:{bg_row};padding:11px 14px;font-size:10pt;"
+                    f"line-height:1.4;color:#263238;")
+
+            dias = row["return_days"]
+            dias_cell = (
+                f'<span style="font-weight:700;color:#C62828;background:#FFEBEE;'
+                f'padding:2px 7px;border-radius:4px;">{dias}</span>'
+                if isinstance(dias, int) and dias > 0
+                else (str(dias) if dias != "" else '<span style="color:#B0BEC5;">\u2014</span>')
+            )
+
+            status_val = row["status"]
+            status_en = STATUS_EN.get(status_val, status_val)
+            status_style = "background:#E3F2FD;color:#1565C0;border:1px solid #BBDEFB;"
+            if status_val == "Aprobado":
+                status_style = "background:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;"
+            elif status_val == "Rechazado":
+                status_style = "background:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;"
+            elif "Com" in status_val:
+                status_style = "background:#FFF8E1;color:#E65100;border:1px solid #FFE082;"
+
+            rows_html += f"""
+            <tr>
+              <td style="{cell}{sep}white-space:nowrap;">{row['order_no']}</td>
+              <td style="{cell}{sep}white-space:nowrap;font-family:monospace;">{row['po_no']}</td>
+              <td style="{cell}{sep}">{row['client_doc_no'] or '<span style="color:#B0BEC5;">\u2014</span>'}</td>
+              <td style="{cell}{sep}white-space:nowrap;font-family:monospace;">{row['eipsa_doc_no']}</td>
+              <td style="{cell}{sep}">{row['title']}</td>
+              <td style="{cell}{sep}text-align:center;">
+                <span style="padding:3px 10px;border-radius:4px;font-size:9pt;font-weight:700;white-space:nowrap;{status_style}">{status_en}</span>
+              </td>
+              <td style="{cell}{sep}text-align:center;">{row['revision'] or '\u2014'}</td>
+              <td style="{cell}{sep}white-space:nowrap;font-family:monospace;">{row['sent_date'] or '\u2014'}</td>
+              <td style="{cell}{sep_last}text-align:center;white-space:nowrap;">{dias_cell}</td>
+            </tr>"""
+
+        today = datetime.now().strftime("%d/%m/%Y")
+        pedido = preview["pedido"]
+        po = preview["po"]
+        cliente = preview["cliente"]
+        docs_count = preview["docs_count"]
+        doc_label = "document" if docs_count == 1 else "documents"
+
+        th = (f"background:{NAVY};color:#FFFFFF;padding:10px 14px;font-size:9px;"
+              f"font-weight:700;letter-spacing:0.06em;text-transform:uppercase;"
+              f"text-align:left;border-right:1px solid #234B73;")
+
+        # Body text per level
+        if level == 1:
+            body_text = (
+                f"Please find below the list of documents submitted for review under "
+                f"<strong>Order {pedido}</strong>"
+                f"{f' / PO <strong>{po}</strong>' if po else ''}"
+                f"{f' \u2014 <strong>{cliente}</strong>' if cliente else ''}. "
+                f"The following <strong>{docs_count} {doc_label}</strong> have been sent "
+                f"pending review and have not yet been returned by the customer."
+            )
+            closing_text = (
+                "We kindly request you to confirm the review status of the above documents "
+                "at your earliest convenience, or let us know if any additional information "
+                "is required on your end."
+            )
+        elif level == 2:
+            body_text = (
+                f"We would like to formally bring to your attention that the following "
+                f"<strong>{docs_count} {doc_label}</strong> under "
+                f"<strong>Order {pedido}</strong>"
+                f"{f' / PO <strong>{po}</strong>' if po else ''}"
+                f"{f' \u2014 <strong>{cliente}</strong>' if cliente else ''} "
+                f"have been pending review for an extended period. "
+                f"This delay may affect project scheduling and contractual milestones."
+            )
+            closing_text = (
+                "We respectfully request your immediate attention to this matter. "
+                "Please confirm the review status or provide an estimated return date "
+                "as soon as possible to avoid further delays in the project timeline."
+            )
+        else:
+            body_text = (
+                f"<strong style='color:#DC2626;'>URGENT:</strong> Despite previous communications, "
+                f"the following <strong>{docs_count} {doc_label}</strong> under "
+                f"<strong>Order {pedido}</strong>"
+                f"{f' / PO <strong>{po}</strong>' if po else ''}"
+                f"{f' \u2014 <strong>{cliente}</strong>' if cliente else ''} "
+                f"remain pending review for a critical period exceeding contractual timelines. "
+                f"This situation requires immediate action."
+            )
+            closing_text = (
+                "<strong>Immediate action is required.</strong> Please prioritize the review "
+                "of the above documents and confirm the status within the next 48 hours. "
+                "Failure to respond may result in formal contractual escalation procedures."
+            )
+
+        level_badge = (
+            f'<span style="display:inline-block;padding:4px 12px;border-radius:4px;'
+            f'font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;'
+            f'background:{theme["accent"]}18;color:{theme["accent"]};'
+            f'border:1px solid {theme["accent"]}40;">'
+            f'{theme["label"]}</span>'
+        )
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#EEF2F9;font-family:Arial,Helvetica,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#EEF2F9;padding:32px 0;">
+<tr><td align="center">
+<table width="800" cellpadding="0" cellspacing="0" style="max-width:800px;background:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(30,45,125,0.12);">
+
+  <!-- HEADER -->
+  <tr>
+    <td style="background:{NAVY};padding:16px 28px;border-top:4px solid {theme['border_top']};">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="vertical-align:middle;">{logo_html}</td>
+          <td style="vertical-align:middle;text-align:right;">
+            <p style="margin:0;font-size:14px;font-weight:700;color:#FFFFFF;">
+              {theme['label']}
+            </p>
+            <p style="margin:4px 0 0;font-size:11px;color:{theme['accent']};letter-spacing:0.04em;text-transform:uppercase;">
+              Ref: {pedido}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- BODY -->
+  <tr>
+    <td style="padding:24px 28px 8px;">
+      <div style="margin-bottom:16px;">{level_badge}</div>
+      <p style="margin:0 0 4px;font-size:13px;color:{NAVY};font-weight:600;">Dear All,</p>
+      <p style="margin:0 0 20px;font-size:12px;color:#37474F;line-height:1.6;">
+        {body_text}
+      </p>
+
+      <p style="margin:0 0 8px;font-size:10px;font-weight:700;color:{theme['accent']};text-transform:uppercase;letter-spacing:0.08em;">
+        Pending Documents ({docs_count})
+      </p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;border-radius:8px;overflow:hidden;border:1px solid #DDE3F5;margin-bottom:24px;">
+        <thead>
+          <tr>
+            <th style="{th}">Order No.</th>
+            <th style="{th}">PO No.</th>
+            <th style="{th}">Client Doc. No.</th>
+            <th style="{th}">EIPSA Doc. No.</th>
+            <th style="{th}">Title</th>
+            <th style="{th}">Status</th>
+            <th style="{th}">Rev.</th>
+            <th style="{th}">Sent Date</th>
+            <th style="{th}border-right:none;">Return Days</th>
+          </tr>
+        </thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+
+      <p style="margin:0 0 6px;font-size:12px;color:#37474F;line-height:1.6;">
+        {closing_text}
+      </p>
+      <p style="margin:0 0 24px;font-size:12px;color:#37474F;">
+        Best regards,<br>
+        <strong>EIPSA \u2014 Document Control</strong>
+      </p>
+    </td>
+  </tr>
+
+  <!-- FOOTER -->
+  <tr>
+    <td style="background:#F4F7FC;border-top:3px solid {theme['border_top']};padding:16px 28px;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td>
+            <p style="margin:0;font-size:12px;font-weight:700;color:{NAVY};">
+              ESPA\u00d1OLA DE INSTRUMENTACI\u00d3N PRIMARIA, S.A.
+            </p>
+            <p style="margin:3px 0 0;font-size:11px;color:#90A4AE;">
+              <a href="mailto:{SMTP_USER}" style="color:{theme['accent']};text-decoration:none;">{SMTP_USER}</a>
+              &nbsp;\u00b7&nbsp;
+              <a href="https://www.eipsa.es" style="color:{theme['accent']};text-decoration:none;">www.eipsa.es</a>
+            </p>
+          </td>
+          <td style="text-align:right;vertical-align:middle;">
+            <p style="margin:0;font-size:10px;color:#B0BEC5;">
+              Generated by DocFlow &nbsp;\u00b7&nbsp; {today}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+
+</body>
+</html>"""
 
     def send_claim(self, pedido: str, to: list[str], cc: list[str]) -> dict[str, Any]:
         """Genera el HTML profesional y lo envía por SMTP."""

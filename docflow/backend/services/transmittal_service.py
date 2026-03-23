@@ -230,3 +230,135 @@ def get_mappings():
             "GAIA": GAIA_STATUS_MAP,
         },
     }
+
+
+VALID_STATUSES = {"Aprobado", "Rechazado", "Com. Menores", "Com. Mayores", "Comentado", "Informativo"}
+
+
+def apply_statuses(documents: list, user_initials: str = "SYSTEM") -> dict:
+    """
+    Apply parsed statuses from transmittal to the document registry.
+
+    Each document dict should have at minimum:
+    - "doc_eipsa": the document identifier (Nº Doc. EIPSA)
+    - "new_status": the new status to apply
+
+    Returns: {updated: int, skipped: int, errors: list[str], details: list[dict]}
+    """
+    from repositories.instances import data_repo
+    from services.notification_service import notification_service
+
+    all_docs = data_repo.get_all()
+
+    # Build a lookup by normalized Nº Doc. EIPSA
+    doc_lookup = {}
+    for doc in all_docs:
+        doc_eipsa = str(doc.get("Nº Doc. EIPSA", "")).strip().upper()
+        if doc_eipsa:
+            doc_lookup[doc_eipsa] = doc
+
+    updated = 0
+    skipped = 0
+    errors = []
+    details = []
+
+    for item in documents:
+        doc_eipsa = str(item.get("doc_eipsa", "")).strip()
+        new_status = str(item.get("new_status", "")).strip()
+        titulo = str(item.get("titulo", ""))
+        doc_eipsa_upper = doc_eipsa.upper()
+
+        # Skip if no status provided
+        if not new_status:
+            skipped += 1
+            details.append({
+                "doc_eipsa": doc_eipsa,
+                "titulo": titulo,
+                "result": "skipped",
+                "reason": "empty_status",
+            })
+            continue
+
+        # Validate status
+        if new_status not in VALID_STATUSES:
+            skipped += 1
+            details.append({
+                "doc_eipsa": doc_eipsa,
+                "titulo": titulo,
+                "result": "skipped",
+                "reason": "invalid_status",
+                "new_status": new_status,
+            })
+            continue
+
+        # Find matching doc in registry
+        matched_doc = doc_lookup.get(doc_eipsa_upper)
+        if not matched_doc:
+            errors.append(f"Document not found: {doc_eipsa}")
+            details.append({
+                "doc_eipsa": doc_eipsa,
+                "titulo": titulo,
+                "result": "error",
+                "reason": "not_found",
+            })
+            continue
+
+        old_status = str(matched_doc.get("Estado", "")).strip()
+
+        # Skip if status unchanged
+        if old_status == new_status:
+            skipped += 1
+            details.append({
+                "doc_eipsa": doc_eipsa,
+                "titulo": titulo,
+                "old_status": old_status,
+                "new_status": new_status,
+                "result": "skipped",
+                "reason": "same_status",
+            })
+            continue
+
+        # Update the document status
+        doc_id = str(matched_doc.get("Nº Doc. EIPSA", "")).strip()
+        result = data_repo.update(doc_id, {"Estado": new_status})
+
+        if result is not None:
+            updated += 1
+            details.append({
+                "doc_eipsa": doc_eipsa,
+                "titulo": titulo,
+                "old_status": old_status,
+                "new_status": new_status,
+                "result": "updated",
+            })
+        else:
+            errors.append(f"Failed to update: {doc_eipsa}")
+            details.append({
+                "doc_eipsa": doc_eipsa,
+                "titulo": titulo,
+                "old_status": old_status,
+                "new_status": new_status,
+                "result": "error",
+                "reason": "update_failed",
+            })
+
+    # Log notification for audit trail
+    if updated > 0:
+        notification_service.add(
+            tipo="bulk_status_update",
+            titulo=f"Bulk status update: {updated} documents updated",
+            detalle=f"Updated: {updated}, Skipped: {skipped}, Errors: {len(errors)}",
+            metadata={
+                "user": user_initials,
+                "updated": updated,
+                "skipped": skipped,
+                "errors": errors,
+            },
+        )
+
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "details": details,
+    }

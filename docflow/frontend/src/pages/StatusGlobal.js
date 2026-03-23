@@ -4,8 +4,9 @@ import api from "../services/api";
 import { useToast } from "../contexts/ToastContext";
 import SkeletonCard from "../components/SkeletonCard";
 import PageHeader from "../components/PageHeader";
-import { ArrowClockwise, DownloadSimple, Copy, CheckCircle, ArrowUUpLeft, PaperPlaneTilt, ClockCountdown, FolderSimple, ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowClockwise, DownloadSimple, Copy, CheckCircle, ArrowUUpLeft, PaperPlaneTilt, ClockCountdown, FolderSimple, ArrowSquareOut, ClockCounterClockwise } from "@phosphor-icons/react";
 import ProjectPreviewPopover from "../components/ProjectPreviewPopover";
+import DocTimeline from "../components/DocTimeline";
 import { API_BASE } from "../config";
 import { STATUS_COLORS as STATUS_COLORS_INLINE } from "../constants/status";
 import { diasDesde } from "../utils/dates";
@@ -46,6 +47,7 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
   const debounceRef = useRef(null);
   const [hoveredPedido, setHoveredPedido] = useState(null);
   const [popoverAnchor, setPopoverAnchor] = useState(null);
+  const [timelineDoc, setTimelineDoc] = useState(null);
   const hoverTimerRef = useRef(null);
   const graceTimerRef = useRef(null);
 
@@ -66,6 +68,13 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (graceTimerRef.current) clearTimeout(graceTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -634,6 +643,7 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
                       expandFilter={expandFilter}
                       setExpandFilter={setExpandFilter}
                       t={t}
+                      onOpenTimeline={setTimelineDoc}
                     />
                       </td>
                     </tr>
@@ -680,6 +690,11 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
           />
         )}
       </AnimatePresence>
+
+      {/* Document Timeline Modal */}
+      {timelineDoc && (
+        <DocTimeline docRef={timelineDoc} onClose={() => setTimelineDoc(null)} />
+      )}
     </div>
   );
 }
@@ -804,7 +819,7 @@ function sortDocs(docs, sortState) {
   });
 }
 
-function ExpandedDocs({ docs, loading, activeSection, pedido, expandSort, setExpandSort, expandFilter, setExpandFilter, t }) {
+function ExpandedDocs({ docs, loading, activeSection, pedido, expandSort, setExpandSort, expandFilter, setExpandFilter, t, onOpenTimeline }) {
   const EXPAND_COLS = getExpandCols(t);
 
   if (loading) {
@@ -903,7 +918,7 @@ function ExpandedDocs({ docs, loading, activeSection, pedido, expandSort, setExp
                 onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "var(--bg-page)" : "var(--bg-card)"}>
                 {EXPAND_COLS.map((c) => (
                   <td key={c.key} style={{ padding: "6px 10px", textAlign: c.align, whiteSpace: c.key === "Título" ? "normal" : "nowrap", verticalAlign: "middle" }}>
-                    {renderExpandCell(doc, c.key, t)}
+                    {renderExpandCell(doc, c.key, t, onOpenTimeline)}
                   </td>
                 ))}
               </tr>
@@ -915,7 +930,7 @@ function ExpandedDocs({ docs, loading, activeSection, pedido, expandSort, setExp
   );
 }
 
-function renderExpandCell(doc, key, t) {
+function renderExpandCell(doc, key, t, onOpenTimeline) {
   const val = doc[key];
 
   if (key === "_dias_transcurridos") {
@@ -985,7 +1000,26 @@ function renderExpandCell(doc, key, t) {
   }
 
   if (key === "Nº Doc. EIPSA") {
-    return <span style={{ fontWeight: 700, color: "#2563EB", fontSize: 11 }}>{String(val || "—")}</span>;
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span style={{ fontWeight: 700, color: "#2563EB", fontSize: 11 }}>{String(val || "—")}</span>
+        {val && onOpenTimeline && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenTimeline(String(val)); }}
+            title={t("docTimeline") || "Timeline"}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: 2, display: "flex", alignItems: "center", color: "var(--text-muted)",
+              opacity: 0.6, transition: "opacity 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "0.6"}
+          >
+            <ClockCounterClockwise size={13} weight="bold" />
+          </button>
+        )}
+      </span>
+    );
   }
 
   if (key === "Nº Doc. Cliente") {

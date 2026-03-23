@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   Eye, EyeSlash, PencilSimple, Trash, Plus, FloppyDisk,
   ArrowClockwise, CheckCircle, XCircle, HardDrives, EnvelopeSimple,
-  FileText, Plugs, UserPlus, X, Check,
+  FileText, Plugs, UserPlus, X, Check, FolderSimple, Clock,
 } from "@phosphor-icons/react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import PageHeader from "../components/PageHeader";
@@ -12,6 +12,7 @@ import { useI18n } from "../contexts/I18nContext";
 import { useToast } from "../contexts/ToastContext";
 import { useTenant } from "../contexts/TenantContext";
 import api from "../services/api";
+import { formatDateTime } from "../utils/dates";
 
 const ALL_TABS = [
   { key: "cuenta", label: "Cuenta", roles: ["admin", "Document Controller", "Project Manager", "Comercial"] },
@@ -23,6 +24,7 @@ const ALL_TABS = [
   { key: "sistema", label: "Sistema", roles: ["admin", "Document Controller"] },
   { key: "actividad", label: "Actividad", roles: ["admin", "Document Controller", "Project Manager"] },
   { key: "facturacion", label: "Facturación", roles: ["admin", "Document Controller"] },
+  { key: "sincronizacion", label: "Sincronizacion", roles: ["admin", "Document Controller"] },
 ];
 
 /* ── Card wrapper ── */
@@ -1327,7 +1329,7 @@ function ActividadTab() {
                 <p className="text-text-muted" style={{ fontSize: 11 }}>{log.detalle}</p>
               </div>
               <span className="text-text-muted" style={{ fontSize: 10, flexShrink: 0 }}>
-                {new Date(log.timestamp).toLocaleString("es-ES")}
+                {formatDateTime(log.timestamp)}
               </span>
             </div>
           ))}
@@ -1363,6 +1365,7 @@ export default function Settings({ user, onTabChange }) {
         {activeTab === "api" && <ApiKeysTab />}
         {activeTab === "actividad" && <ActividadTab />}
         {activeTab === "facturacion" && <FacturacionTab />}
+        {activeTab === "sincronizacion" && <SincronizacionTab />}
       </div>
     </div>
   );
@@ -1943,6 +1946,187 @@ function FacturacionTab() {
           ))}
         </div>
       </SettingsCard>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sincronizacion tab: folder sync                                   */
+/* ------------------------------------------------------------------ */
+function SincronizacionTab() {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [status, setStatus] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [scanResult, setScanResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      api.get("/folder-sync/status"),
+      api.get("/folder-sync/history"),
+    ]).then(([statusRes, historyRes]) => {
+      setStatus(statusRes.data);
+      setHistory(historyRes.data);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const triggerScan = async () => {
+    setScanning(true);
+    try {
+      const res = await api.post("/folder-sync/scan");
+      setScanResult(res.data);
+      setStatus(prev => ({
+        ...prev,
+        last_scan: res.data.scan_time,
+        total_files: res.data.total_scanned,
+        last_new_count: res.data.new_files?.length || 0,
+        last_modified_count: res.data.modified_files?.length || 0,
+      }));
+      // Refresh history
+      api.get("/folder-sync/history").then(r => setHistory(r.data)).catch(() => {});
+      showToast(t("fsTriggerScan") + " OK", "success");
+    } catch (err) {
+      showToast(err?.response?.data?.detail || "Error escaneando", "error");
+    } finally { setScanning(false); }
+  };
+
+  const formatSize = (bytes) => {
+    if (!bytes) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  };
+
+  if (loading) return <div className="text-text-muted" style={{ padding: 40, textAlign: "center" }}>Cargando...</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Status card */}
+      <SettingsCard>
+        <SectionHeading>{t("fsTitle") || "Sincronizacion de carpetas"}</SectionHeading>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 16 }}>
+          <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: status?.path_accessible ? "#16A34A15" : "#DC262615", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {status?.path_accessible ? <CheckCircle size={18} weight="bold" style={{ color: "#16A34A" }} /> : <XCircle size={18} weight="bold" style={{ color: "#DC2626" }} />}
+            </div>
+            <div>
+              <p className="text-text-muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{t("fsStatus") || "Estado"}</p>
+              <p className="text-text-main" style={{ fontSize: 13, fontWeight: 600 }}>
+                {status?.path_accessible ? "Conectado" : (t("fsNoAccess") || "No accesible")}
+              </p>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: "#4F46E515", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <FolderSimple size={18} weight="bold" style={{ color: "#4F46E5" }} />
+            </div>
+            <div>
+              <p className="text-text-muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{t("fsTotalScanned") || "Total archivos"}</p>
+              <p className="text-text-main" style={{ fontSize: 13, fontWeight: 600 }}>{(status?.total_files || 0).toLocaleString()}</p>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: "#D9770615", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Clock size={18} weight="bold" style={{ color: "#D97706" }} />
+            </div>
+            <div>
+              <p className="text-text-muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{t("fsLastScan") || "Ultimo escaneo"}</p>
+              <p className="text-text-main" style={{ fontSize: 13, fontWeight: 600 }}>
+                {status?.last_scan ? formatDateTime(status.last_scan) : "Nunca"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <p className="text-text-muted" style={{ fontSize: 11 }}>
+            Ruta: <code style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "var(--bg-page)", border: "1px solid var(--border)" }}>{status?.base_path || "N/A"}</code>
+          </p>
+          <div className="flex-1" />
+          <button onClick={triggerScan} disabled={scanning} className="rounded-lg" style={{
+            padding: "8px 16px", border: "none", background: "var(--accent)", color: "#FFF",
+            fontSize: 12, fontWeight: 600, cursor: scanning ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", gap: 6, opacity: scanning ? 0.7 : 1,
+          }}>
+            <ArrowClockwise size={14} weight="bold" className={scanning ? "animate-spin" : ""} />
+            {scanning ? (t("fsScanning") || "Escaneando...") : (t("fsTriggerScan") || "Escanear ahora")}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* Scan result - new files */}
+      {scanResult?.new_files?.length > 0 && (
+        <SettingsCard>
+          <SectionHeading>
+            <FileText size={14} weight="bold" style={{ display: "inline", marginRight: 6 }} />
+            {t("fsNewFiles") || "Archivos nuevos"} ({scanResult.new_files.length})
+          </SectionHeading>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Archivo</th>
+                  <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Extension</th>
+                  <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Tamano</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scanResult.new_files.slice(0, 50).map((f, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td className="text-text-main" style={{ padding: "6px 8px", fontSize: 12, maxWidth: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.relative_path || f.path}>
+                      {f.relative_path || f.name}
+                    </td>
+                    <td className="text-text-sub" style={{ padding: "6px 8px" }}>
+                      <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "var(--bg-page)", border: "1px solid var(--border)" }}>{f.extension}</span>
+                    </td>
+                    <td className="text-text-sub" style={{ padding: "6px 8px", textAlign: "right" }}>{formatSize(f.size)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SettingsCard>
+      )}
+
+      {/* History */}
+      {history.length > 0 && (
+        <SettingsCard>
+          <SectionHeading>{t("fsHistory") || "Historial de escaneos"}</SectionHeading>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Fecha</th>
+                <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Total</th>
+                <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Nuevos</th>
+                <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Modificados</th>
+                <th className="text-text-muted" style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                  <td className="text-text-main" style={{ padding: "6px 8px" }}>{h.scan_time ? formatDateTime(h.scan_time) : "-"}</td>
+                  <td className="text-text-sub" style={{ padding: "6px 8px", textAlign: "right" }}>{h.total_scanned || 0}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, color: h.new_files > 0 ? "#16A34A" : "var(--text-muted)" }}>{h.new_files || 0}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, color: h.modified_files > 0 ? "#D97706" : "var(--text-muted)" }}>{h.modified_files || 0}</td>
+                  <td style={{ padding: "6px 8px" }}>
+                    {h.error ? (
+                      <span style={{ fontSize: 10, color: "#DC2626" }}>{h.error}</span>
+                    ) : (
+                      <CheckCircle size={14} weight="bold" style={{ color: "#16A34A" }} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SettingsCard>
+      )}
     </div>
   );
 }

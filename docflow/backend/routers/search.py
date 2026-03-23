@@ -4,10 +4,12 @@ import anthropic
 import json
 
 from services.monitoring_service import MonitoringService
+from services.unified_search_service import UnifiedSearchService
 from repositories.instances import data_repo, consulta_repo
 from utils.config import ANTHROPIC_API_KEY
 
 router = APIRouter()
+_unified = UnifiedSearchService()
 
 SYSTEM_PROMPT = """Eres un asistente que traduce consultas en lenguaje natural a filtros JSON para buscar documentos de ingeniería.
 
@@ -200,3 +202,9 @@ def faceted_search(
         "facets": facets,
         "results": filtered[:limit],
     }
+
+
+@router.get("/unified")
+def unified_search(q: str = "", limit: int = 20):
+    """Unified search across all data sources — documents, pedidos, claims."""
+    return _unified.search(q, limit)

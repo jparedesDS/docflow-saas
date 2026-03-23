@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
+from typing import Optional
 
 from services import transmittal_service
+from auth_middleware import get_current_user
 
 router = APIRouter()
 
@@ -10,6 +12,10 @@ class ProcessRequest(BaseModel):
     to: list[str]
     cc: list[str] = []
     status_overrides: dict[str, str] = {}
+
+
+class BulkStatusRequest(BaseModel):
+    documents: list[dict]  # [{doc_eipsa: str, new_status: str, titulo: str}, ...]
 
 
 @router.get("/emails")
@@ -74,6 +80,18 @@ def debug_email(uid: str, folder: str = Query("INBOX")):
                     ],
                 }
     return {"parts": parts, "tnef_info": tnef_info}
+
+
+@router.post("/emails/{uid}/apply-statuses")
+def apply_statuses(uid: str, req: BulkStatusRequest, user=Depends(get_current_user)):
+    try:
+        user_initials = user.get("initials", "SYSTEM") if isinstance(user, dict) else "SYSTEM"
+        result = transmittal_service.apply_statuses(req.documents, user_initials)
+        return result
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/mappings")

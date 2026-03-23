@@ -1,15 +1,24 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import Any
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from typing import Any, Optional
 from services import agenda_service
 from services.monitoring_service import MonitoringService
 from services.reunion_sync_service import fetch_reuniones_from_email
+from services.meeting_minutes_service import MeetingMinutesService
 from repositories.instances import data_repo, consulta_repo
+from utils.auth_middleware import get_current_user
 
 router = APIRouter()
 
 TIPOS = {"notas", "reuniones", "tareas"}
 
 _monitoring_service = MonitoringService(data_repo, consulta_repo)
+_minutes_service = MeetingMinutesService()
+
+
+class MinutesRequest(BaseModel):
+    notes: str
+    client_name: Optional[str] = None
 
 
 def _check(tipo):
@@ -45,10 +54,8 @@ def get_reuniones(owner: str = Query(None)):
     if not owner:
         return stored
 
-    # Sync desde email del owner
     from_email = fetch_reuniones_from_email(owner)
 
-    # Deduplicar contra las ya almacenadas (por _uid o titulo+fecha)
     existing_keys = set()
     for r in stored:
         key = r.get("_uid") or f"{r.get('titulo','')}_{r.get('fecha','')}"
@@ -97,9 +104,69 @@ def sync_tareas(owner: str = Query(...)):
     return agenda_service.sync_tareas(owner, pending)
 
 
+@router.post("/reuniones/{reunion_id}/generate-minutes")
+async def generate_meeting_minutes(
+    reunion_id: str,
+    body: MinutesRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Generate AI meeting minutes for a reunion."""
+    reuniones = agenda_service.get_all("reuniones")
+    reunion = next((r for r in reuniones if r.get("id") == reunion_id), None)
+    if not reunion:
+        raise HTTPException(status_code=404, detail="Reunión no encontrada")
+
+    context = None
+    if body.client_name:
+        context = _minutes_service.prefill_context(body.client_name)
+
+    try:
+        result = _minutes_service.generate_minutes(
+            reunion_data={
+                "titulo": reunion.get("titulo", ""),
+                "fecha": reunion.get("fecha", ""),
+                "asistentes": reunion.get("asistentes", []),
+                "descripcion": reunion.get("descripcion", ""),
+                "ubicacion": reunion.get("ubicacion", ""),
+            },
+            notes=body.notes,
+            context=context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error generando acta: {str(exc)}")
+
+    acta_data = {
+        "acta": result["acta"],
+        "decisiones": result["decisiones"],
+        "acciones": result["acciones"],
+        "notas_reunion": body.notes,
+    }
+    updated = agenda_service.update("reuniones", reunion_id, acta_data)
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Error guardando acta en la reunión")
+
+    return updated
+
+
+@router.get("/reuniones/{reunion_id}/context")
+async def get_meeting_context(
+    reunion_id: str,
+    client_name: str = Query(""),
+    user: dict = Depends(get_current_user),
+):
+    """Get client context for pre-filling meeting minutes."""
+    reuniones = agenda_service.get_all("reuniones")
+    reunion = next((r for r in reuniones if r.get("id") == reunion_id), None)
+    if not reunion:
+        raise HTTPException(status_code=404, detail="Reunión no encontrada")
+
+    return _minutes_service.prefill_context(client_name)
+
+
 @router.get("/reuniones/debug")
 def reuniones_debug(owner: str = Query(...)):
-    """Diagnóstico: qué encuentra el IMAP del owner buscando invitaciones."""
     from services.reunion_sync_service import USER_IMAP_CREDS, IMAP_HOST, IMAP_PORT
     import imaplib, email as emaillib
 
@@ -115,12 +182,9 @@ def reuniones_debug(owner: str = Query(...)):
         with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
             imap.login(creds["user"], creds["pass"])
             result["login"] = "OK"
-
             imap.select("INBOX")
             _, total = imap.search(None, "ALL")
             result["total_inbox"] = len(total[0].split()) if total[0] else 0
-
-            # Buscar por distintos criterios
             searches = {
                 "SUBJECT invitation": 'SUBJECT "invitation"',
                 "SUBJECT reunión":    'SUBJECT "reuni"',
@@ -132,8 +196,6 @@ def reuniones_debug(owner: str = Query(...)):
                 _, nums = imap.search(None, criteria)
                 ids = nums[0].split() if nums[0] else []
                 result["searches"][label] = len(ids)
-
-            # Inspeccionar los últimos 20 emails: Content-Type y asunto
             _, all_ids = imap.search(None, "ALL")
             last_20 = (all_ids[0].split() or [])[-20:]
             samples = []
@@ -143,8 +205,6 @@ def reuniones_debug(owner: str = Query(...)):
                     raw = data[0][1].decode("utf-8", errors="replace")
                     samples.append(raw.strip().replace("\r\n", " | "))
             result["ultimos_20_headers"] = samples
-
-            # Buscar emails con REUNI en asunto y mostrar cuerpo completo
             _, reuni_ids = imap.search(None, 'SUBJECT "reuni"')
             reuni_samples = []
             for num in (reuni_ids[0].split() if reuni_ids[0] else [])[:3]:
@@ -164,7 +224,6 @@ def reuniones_debug(owner: str = Query(...)):
                             body = part.get_payload(decode=True).decode("utf-8", errors="replace")[:600]
                     reuni_samples.append({"subject": subject, "date": date, "body_preview": body})
             result["reunion_emails"] = reuni_samples
-
     except imaplib.IMAP4.error as e:
         result["error"] = f"IMAP error: {e}"
     except Exception as e:
@@ -175,21 +234,17 @@ def reuniones_debug(owner: str = Query(...)):
 
 @router.get("/tareas/sync/debug")
 def sync_debug(owner: str = Query(...)):
-    """Devuelve info de diagnóstico: columnas disponibles y muestra de valores de Responsable/Estado."""
     all_docs = _monitoring_service.get_monitoring_data()
     if not all_docs:
         return {"error": "Sin documentos", "total": 0}
-
     responsables = list({str(d.get("Responsable", "") or "").strip() for d in all_docs})
     repsonsables = list({str(d.get("Repsonsable", "") or "").strip() for d in all_docs})
     estados = list({str(d.get("Estado", "") or "").strip().lower() for d in all_docs})
-
     pending = [
         d for d in all_docs
         if str(d.get("Repsonsable", "") or "").strip() == owner
         and (d.get("Estado", "") or "").strip().lower() in agenda_service.ESTADOS_PENDIENTES
     ]
-
     return {
         "total_docs": len(all_docs),
         "columnas": list(all_docs[0].keys()) if all_docs else [],

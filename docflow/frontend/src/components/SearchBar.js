@@ -55,14 +55,9 @@ export default function SearchBar({ onNavigate }) {
     { label: t('sbRunBackup'), action: () => { api.post("/backup/trigger").catch(() => {}); }, icon: HardDrives, type: "action" },
   ], [theme, toggleTheme, lang, toggleLang, t]);
 
-  // Ctrl+K shortcut
+  // Escape key — close dropdown (Ctrl+K now handled by CommandPalette in App.js)
   useEffect(() => {
     const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        inputRef.current?.focus();
-        setOpen(true);
-      }
       if (e.key === "Escape") {
         setOpen(false);
         inputRef.current?.blur();

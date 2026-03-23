@@ -1,12 +1,14 @@
 import re
 
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from typing import Optional
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
+from services.kpi_snapshot_service import KpiSnapshotService
 from services.supplier_scorecard_service import get_scorecard
+from services.anomaly_detection_service import AnomalyDetectionService
 from repositories.instances import data_repo, consulta_repo
 from services.smtp_service import send_html_email
 
@@ -14,6 +16,20 @@ router = APIRouter()
 
 monitoring_service = MonitoringService(data_repo, consulta_repo)
 analytics_service = AnalyticsService()
+_anomaly_service = AnomalyDetectionService()
+_snapshot_service = KpiSnapshotService()
+
+
+@router.get("/trends")
+def get_kpi_trends(months: int = Query(default=12, ge=1, le=60)):
+    """Get KPI trend data for the last N months."""
+    return _snapshot_service.get_trends(months)
+
+
+@router.post("/snapshot")
+def take_kpi_snapshot():
+    """Take a manual KPI snapshot (also runs monthly via scheduler)."""
+    return _snapshot_service.take_snapshot()
 
 
 @router.get("/summary")
@@ -160,3 +176,16 @@ def get_s_curve():
         actual.append({"month": m, "value": round((cum_approved / total) * 100)})
 
     return {"baseline": baseline, "actual": actual, "predicted": []}
+
+
+@router.get("/team-workload")
+def get_team_workload():
+    """Returns team workload distribution with overload detection."""
+    docs = monitoring_service.get_monitoring_data()
+    return analytics_service.get_team_workload(docs)
+
+
+@router.get("/anomalies")
+def get_anomalies(sigma: float = 2.0):
+    """Detect documents with anomalous client response times."""
+    return _anomaly_service.detect_anomalies(sigma)

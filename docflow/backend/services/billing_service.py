@@ -135,12 +135,23 @@ def create_portal_session(tenant_id: int, return_url: str) -> str:
 
 def handle_webhook(payload: bytes, sig_header: str) -> dict:
     """Process a Stripe webhook event. Returns {type, tenant_id, action}."""
+    from utils.redis_client import get_redis
+
     stripe = _get_stripe()
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
     except (ValueError, stripe.error.SignatureVerificationError) as e:
         raise ValueError(f"Invalid webhook: {e}")
+
+    # ── Idempotency check (skip duplicate events) ─────────────────
+    redis = get_redis()
+    if redis is not None:
+        event_key = f"stripe_event:{event['id']}"
+        if redis.get(event_key):
+            logger.info("stripe_webhook_duplicate", event_id=event["id"])
+            return {"type": event.get("type", "unknown"), "action": "duplicate_skipped"}
+        redis.setex(event_key, 7 * 24 * 3600, "processed")  # 7-day TTL
 
     event_type = event["type"]
     data_obj = event["data"]["object"]

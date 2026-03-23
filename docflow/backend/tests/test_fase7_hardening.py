@@ -101,7 +101,7 @@ class TestFilenameSanitization:
     def test_download_path_traversal_returns_400(self, client, auth_headers):
         """Download with path traversal in filename should return 400."""
         resp = client.get(
-            "/api/v1/attachments/TEST-001/..passwd/download",
+            "/api/v1/attachments/TEST-001/%2e%2epasswd/download",
             headers=auth_headers,
         )
         assert resp.status_code == 400

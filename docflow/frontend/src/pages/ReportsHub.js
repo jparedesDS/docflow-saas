@@ -6,9 +6,12 @@ import PageHeader from "../components/PageHeader";
 import KpiCard from "../components/ui/KpiCard";
 import SectionTitle from "../components/ui/SectionTitle";
 import SkeletonCard from "../components/SkeletonCard";
+import KpiTrends from "../components/KpiTrends";
 import ReportCenter from "./ReportCenter";
 import Personal from "./Personal";
 import SupplierScorecard from "./SupplierScorecard";
+import TeamWorkload from "./TeamWorkload";
+import OrderPredictions from "./OrderPredictions";
 import api from "../services/api";
 import { useI18n } from "../contexts/I18nContext";
 import {
@@ -37,9 +40,11 @@ export default function ReportsHub({ onTabChange }) {
   const TABS = useMemo(() => [
     { key: "resumen", label: t('tabResumen') },
     { key: "rendimiento", label: t('tabRendimiento') },
+    { key: "predicciones", label: t('orderPredictions') },
     { key: "equipo", label: t('tabEquipo') },
     { key: "centro", label: t('tabReportCenter') },
     { key: "scorecard", label: "Scorecard" },
+    { key: "carga", label: t('tabWorkload') || "Carga de Trabajo" },
   ], [t]);
 
   useEffect(() => {
@@ -61,6 +66,15 @@ export default function ReportsHub({ onTabChange }) {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  if (activeTab === "predicciones") {
+    return (
+      <div>
+        <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} layoutId="reports-tab" />
+        <div style={{ marginTop: 20 }}><OrderPredictions /></div>
+      </div>
+    );
+  }
 
   if (activeTab === "equipo") {
     return (
@@ -85,6 +99,15 @@ export default function ReportsHub({ onTabChange }) {
       <div>
         <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} layoutId="reports-tab" />
         <div style={{ marginTop: 20 }}><SupplierScorecard /></div>
+      </div>
+    );
+  }
+
+  if (activeTab === "carga") {
+    return (
+      <div>
+        <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} layoutId="reports-tab" />
+        <div style={{ marginTop: 20 }}><TeamWorkload /></div>
       </div>
     );
   }
@@ -252,6 +275,9 @@ function ResumenTab({ data, fetchData }) {
           <HeatmapInline data={heatmap} />
         </div>
       )}
+
+      {/* KPI Trends */}
+      <KpiTrends />
     </div>
   );
 }

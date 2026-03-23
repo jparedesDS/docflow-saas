@@ -21,6 +21,7 @@ from routers import (
     schedules, tenants, billing, admin, workflows,
     audit, comments, saved_filters, attachments, webhooks_config, api_keys,
     classification, portal, response_templates, predictions,
+    my_morning, chatbot, folder_sync,
 )
 from utils.config import CORS_ORIGINS
 from utils.logging_config import setup_logging
@@ -37,10 +38,14 @@ async def lifespan(app: FastAPI):
     from services.backup_service import run_backup
     from services.polling_service import poll_and_process
     from services.scheduled_reports_service import sync_scheduler_jobs
+    from services.kpi_snapshot_service import KpiSnapshotService
+    from services.folder_sync_service import FolderSyncService
 
     # Infrastructure jobs (not user-configurable)
     scheduler.add_job(run_backup, "cron", hour=2, minute=0, id="daily_backup")
     scheduler.add_job(poll_and_process, "interval", minutes=15, id="imap_polling")
+    scheduler.add_job(KpiSnapshotService().take_snapshot, "cron", day=1, hour=0, minute=30, id="kpi_snapshot")
+    scheduler.add_job(FolderSyncService().scan_folder, "interval", minutes=30, id="folder_sync")
 
     # Dynamic report schedules from JSON config
     sync_scheduler_jobs(scheduler)
@@ -115,6 +120,8 @@ PUBLIC_PREFIXES = (
     "/openapi.json",
     "/api/v1/portal/documents",
     "/api/v1/portal/dashboard",
+    "/api/v1/portal/document",
+    "/api/v1/notifications/stream",
 )
 
 
@@ -324,6 +331,9 @@ app.include_router(classification.router, prefix="/api/v1/classification", tags=
 app.include_router(portal.router, prefix="/api/v1/portal", tags=["portal"])
 app.include_router(response_templates.router, prefix="/api/v1/response-templates", tags=["response-templates"])
 app.include_router(predictions.router, prefix="/api/v1/predictions", tags=["predictions"])
+app.include_router(my_morning.router, prefix="/api/v1/my-morning", tags=["my-morning"])
+app.include_router(chatbot.router, prefix="/api/v1/chatbot", tags=["chatbot"])
+app.include_router(folder_sync.router, prefix="/api/v1/folder-sync", tags=["folder-sync"])
 
 
 @app.get("/")

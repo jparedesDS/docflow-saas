@@ -14,6 +14,7 @@ import SkeletonCard from "../components/SkeletonCard";
 import { useI18n } from "../contexts/I18nContext";
 import { useTheme } from "../contexts/ThemeContext";
 import TopLoadingBar from "../components/TopLoadingBar";
+import AnomalyAlerts from "../components/AnomalyAlerts";
 import { DASHBOARD_COLORS as STATUS_COLORS } from "../constants/status";
 import { timeAgo } from "../utils/dates";
 
@@ -26,6 +27,7 @@ export default function Dashboard({ onNavigate }) {
   const [analytics, setAnalytics] = useState(null);
   const [notifications, setNotifications] = useState(null);
   const [atRisk, setAtRisk] = useState([]);
+  const [anomalyData, setAnomalyData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,11 +36,13 @@ export default function Dashboard({ onNavigate }) {
       api.get("/analytics/summary"),
       api.get("/notifications/?limit=6"),
       api.get("/predictions/at-risk?limit=5"),
-    ]).then(([monRes, anaRes, notRes, riskRes]) => {
+      api.get("/analytics/anomalies"),
+    ]).then(([monRes, anaRes, notRes, riskRes, anomRes]) => {
       if (monRes.status === "fulfilled") setMonitoring(monRes.value.data);
       if (anaRes.status === "fulfilled") setAnalytics(anaRes.value.data);
       if (notRes.status === "fulfilled") setNotifications(notRes.value.data);
       if (riskRes.status === "fulfilled") setAtRisk(riskRes.value.data || []);
+      if (anomRes.status === "fulfilled") setAnomalyData(anomRes.value.data);
       setLoading(false);
     });
   }, []);
@@ -316,6 +320,11 @@ export default function Dashboard({ onNavigate }) {
             })}
           </div>
         </div>
+      )}
+
+      {/* Row 4c: Anomaly alerts */}
+      {anomalyData && anomalyData.total_anomalies > 0 && (
+        <AnomalyAlerts anomalyData={anomalyData} />
       )}
 
       {/* Row 5: Quick access + System health */}

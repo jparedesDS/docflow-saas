@@ -3,6 +3,7 @@
 import io
 import os
 import re
+import urllib.parse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -50,16 +51,16 @@ async def upload_attachment(
     """Upload a file attachment to a document."""
     from services.storage_service import upload
 
+    # ── Validate MIME type — must propagate directly, not wrapped by try ──
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"File type not allowed: {file.content_type}",
+        )
+
     tenant_id = current_user.get("tenant_id", 1)
     user_initials = current_user.get("initials", "")
     try:
-        # ── Validate MIME type before reading body ────────────────────
-        if file.content_type not in ALLOWED_MIME_TYPES:
-            raise HTTPException(
-                status_code=415,
-                detail=f"File type not allowed: {file.content_type}",
-            )
-
         file_bytes = await file.read()
 
         # ── Validate file size ────────────────────────────────────────
@@ -93,7 +94,8 @@ async def download_attachment(
     current_user: dict = Depends(get_current_user),
 ):
     """Download a specific file attachment."""
-    if '..' in filename or '/' in filename or '\\' in filename:
+    decoded = urllib.parse.unquote(filename)
+    if '..' in decoded or '/' in decoded or '\\' in decoded:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     from services.storage_service import download

@@ -56,3 +56,12 @@ export function diasDesde(fechaStr) {
 
 /** Alias for diasDesde — used in Reclamaciones */
 export const diffDaysFromNow = diasDesde;
+
+/** Days until a future date (positive = future, negative = past). Returns null if invalid. */
+export function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr); d.setHours(0, 0, 0, 0);
+  if (isNaN(d.getTime())) return null;
+  return Math.round((d - today) / 86400000);
+}

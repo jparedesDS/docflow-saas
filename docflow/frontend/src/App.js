@@ -1,16 +1,19 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sun, Moon, List as ListIcon, X,
   SignOut, Bell, Gear, CaretDown,
-  House, Briefcase, FolderOpen, ChatCircleDots,
+  House, Briefcase, FolderOpen,
   ChartBar, Database, Lightning, CalendarBlank, Toolbox,
 } from "@phosphor-icons/react";
 import api from "./services/api";
 import LoginScreen, { ROLES } from "./components/LoginScreen";
 import LoadingSpinner from "./components/LoadingSpinner";
 import SearchBar from "./components/SearchBar";
+import CommandPalette from "./components/CommandPalette";
 import Breadcrumbs from "./components/Breadcrumbs";
+import ChatPanel from "./components/ChatPanel";
+import TabBar from "./components/TabBar";
 import { useTheme } from "./contexts/ThemeContext";
 import { useI18n } from "./contexts/I18nContext";
 import { useTenant } from "./contexts/TenantContext";
@@ -30,8 +33,8 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const Register = lazy(() => import("./pages/Register"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const ToolsHub = lazy(() => import("./pages/ToolsHub"));
-const Communications = lazy(() => import("./pages/Communications"));
 const ClientPortal = lazy(() => import("./pages/ClientPortal"));
+const MiManana = lazy(() => import("./pages/MiManana"));
 
 /* ── Sidebar navigation items ─────────────────────────────── */
 
@@ -39,7 +42,6 @@ const NAV_ITEMS = [
   { key: "inicio",           icon: House,          labelKey: "navInicio" },
   { key: "proyectos",        icon: Briefcase,      labelKey: "navProyectos" },
   { key: "documentos",       icon: FolderOpen,     labelKey: "navDocumentos" },
-  { key: "comunicaciones",   icon: ChatCircleDots, labelKey: "navComunicaciones" },
   { key: "informes",         icon: ChartBar,       labelKey: "navInformes" },
   { key: "erp",              icon: Database,        labelKey: "navErp" },
   { key: "flujos",           icon: Lightning,       labelKey: "navFlujos" },
@@ -392,6 +394,7 @@ export default function App() {
   const { theme, toggleTheme } = useTheme();
   const { lang, toggleLang, t } = useI18n();
   const [activeSection, setActiveSection] = useState("inicio");
+  const [inicioTab, setInicioTab] = useState("mi-manana");
   const [activeSubTab, setActiveSubTab] = useState(null);
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [activeTool, setActiveTool] = useState(null);
@@ -404,12 +407,62 @@ export default function App() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [showAgendaPanel, setShowAgendaPanel] = useState(false);
   const [showAllNotifs, setShowAllNotifs] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const sseConnected = useRef(false);
 
+  // Request browser notification permission on mount
+  useEffect(() => {
+    if (!user) return;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, [user]);
+
+  // SSE real-time notifications
+  useEffect(() => {
+    if (!user) return;
+    const token = localStorage.getItem("docflow_token");
+    if (!token) return;
+
+    let es;
+    try {
+      const baseUrl = (api.defaults.baseURL || "").replace(/\/+$/, "");
+      es = new EventSource(`${baseUrl}/notifications/stream?token=${encodeURIComponent(token)}`);
+
+      es.onopen = () => { sseConnected.current = true; };
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setNotifs(prev => [data, ...prev].slice(0, 50));
+          setUnreadCount(prev => prev + 1);
+
+          // Browser notification
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification(data.titulo || "DocFlow", {
+              body: data.detalle || "",
+              icon: "/favicon.ico",
+            });
+          }
+        } catch {}
+      };
+
+      es.onerror = () => {
+        sseConnected.current = false;
+        // SSE disconnected — fallback polling will handle it
+      };
+    } catch {}
+
+    return () => { sseConnected.current = false; if (es) es.close(); };
+  }, [user]);
+
+  // Polling fallback for notifications (only when SSE is not connected)
   useEffect(() => {
     if (!user) return;
     const fetchNotifs = async () => {
+      if (sseConnected.current) return; // Skip when SSE is active
       try {
         const res = await api.get("/notifications/?limit=8");
         const data = Array.isArray(res.data) ? res.data : [];
@@ -450,11 +503,18 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e) => {
+      // Ctrl+K / Cmd+K — command palette (works even from input fields)
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(prev => !prev);
+        return;
+      }
+
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
 
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        const keyMap = { "1": "inicio", "2": "proyectos", "3": "documentos", "4": "comunicaciones", "5": "informes", "6": "erp", "7": "flujos", "8": "herramientas" };
+        const keyMap = { "1": "inicio", "2": "proyectos", "3": "documentos", "4": "informes", "5": "erp", "6": "flujos", "7": "herramientas" };
         if (keyMap[e.key]) {
           e.preventDefault();
           handleNavigate(keyMap[e.key]);
@@ -731,14 +791,36 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Command Palette (Ctrl+K) */}
+        <CommandPalette
+          isOpen={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          onNavigate={(section) => { setActiveSection(section); setCommandPaletteOpen(false); }}
+        />
+
         {/* Content */}
         <main className="flex-1 p-6 overflow-auto" role="main" aria-live="polite">
           <div style={{ maxWidth: 1400, margin: "0 auto" }}>
             <Suspense fallback={<LoadingSpinner />}>
-              {activeSection === "inicio" && <Dashboard onNavigate={setActiveSection} />}
+              {activeSection === "inicio" && (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    <TabBar
+                      tabs={[
+                        { key: "mi-manana", label: t("mmMiManana") },
+                        { key: "dashboard", label: t("navDashboard") },
+                      ]}
+                      active={inicioTab}
+                      onChange={setInicioTab}
+                      layoutId="inicio-tab"
+                    />
+                  </div>
+                  {inicioTab === "mi-manana" && <MiManana onNavigate={setActiveSection} />}
+                  {inicioTab === "dashboard" && <Dashboard onNavigate={setActiveSection} />}
+                </>
+              )}
               {activeSection === "proyectos" && <ProjectsHub canExport={user.role === "Document Controller" || user.role === "admin"} onTabChange={setActiveSubTab} />}
               {activeSection === "documentos" && <DocumentsHub canExport={user.role === "Document Controller" || user.role === "admin"} onTabChange={setActiveSubTab} />}
-              {activeSection === "comunicaciones" && <Communications onTabChange={setActiveSubTab} />}
               {activeSection === "informes" && <ReportsHub onTabChange={setActiveSubTab} />}
               {activeSection === "erp" && <ErpHub onTabChange={setActiveSubTab} />}
               {activeSection === "flujos" && <WorkflowsHub onTabChange={setActiveSubTab} />}
@@ -748,6 +830,7 @@ export default function App() {
             </Suspense>
           </div>
         </main>
+        <ChatPanel />
       </div>
     </div>
   );

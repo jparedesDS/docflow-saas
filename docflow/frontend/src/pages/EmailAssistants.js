@@ -4,11 +4,12 @@ import api from "../services/api";
 import SkeletonCard from "../components/SkeletonCard";
 import PageHeader from "../components/PageHeader";
 import TopLoadingBar from "../components/TopLoadingBar";
-import { ArrowClockwise, PaperPlaneTilt, FileText, MicrosoftExcelLogo } from "@phosphor-icons/react";
+import { ArrowClockwise, PaperPlaneTilt, FileText, MicrosoftExcelLogo, CheckCircle, XCircle, WarningCircle } from "@phosphor-icons/react";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
-import { STATUS_COLORS } from "../constants/status";
+import { STATUS_COLORS, getStatusColor } from "../constants/status";
 import { useI18n } from "../contexts/I18nContext";
+import { useToast } from "../contexts/ToastContext";
 
 function getStatusStyle(status) {
   const n = (status || "").toLowerCase().trim().replace(/[\s.]+/g, "_");
@@ -37,6 +38,9 @@ function validateEmails(str) {
 
 export default function Devoluciones() {
   const { t } = useI18n();
+  const { showToast } = useToast();
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState(null);
   const [emails, setEmails]               = useState([]);
   const [loading, setLoading]             = useState(true);
   const [selectedUid, setSelectedUid]     = useState(null);
@@ -97,7 +101,7 @@ export default function Devoluciones() {
   };
 
   const loadPreview = async (uid) => {
-    setSelectedUid(uid); setPreviewLoading(true); setPreview(null); setSendResult(null); setDocStatuses({});
+    setSelectedUid(uid); setPreviewLoading(true); setPreview(null); setSendResult(null); setDocStatuses({}); setApplyResult(null);
     try {
       const res = await api.get(`/transmittals/emails/${uid}/preview`);
       setPreview(res.data);
@@ -135,6 +139,25 @@ export default function Devoluciones() {
     XLSX.utils.book_append_sheet(wb, ws, "Documentos");
     const pedido = (preview.documents[0]?.["Nº Pedido"] || "docs").replace(/\//g, "-");
     XLSX.writeFile(wb, `${pedido}_${preview.platform || "transmittal"}.xlsx`);
+  };
+
+  const handleApplyStatuses = async () => {
+    if (!preview?.documents?.length) return;
+    setApplying(true);
+    try {
+      const docs = preview.documents.map((d, i) => ({
+        doc_eipsa: d["Nº Doc. EIPSA"] || d["Nº Doc. Cliente"] || d["Doc. Cliente"] || "",
+        new_status: docStatuses[i] || d["Estado"] || "",
+        titulo: d["Título"] || "",
+      }));
+      const res = await api.post(`/transmittals/emails/${selectedUid}/apply-statuses`, { documents: docs });
+      setApplyResult(res.data);
+      showToast(t('eaBulkStatusSuccess').replace('{count}', res.data.updated), 'success');
+    } catch (err) {
+      showToast(t('eaBulkStatusError'), 'error');
+    } finally {
+      setApplying(false);
+    }
   };
 
   if (loading) return <LoadingSkeleton />;
@@ -461,7 +484,7 @@ export default function Devoluciones() {
               ).map(([estado, count]) => (
                 <Badge key={estado} status={estado} label={`${count} ${estado}`} variant="dot" />
               ))}
-              <div style={{ marginLeft: "auto" }}>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={exportToExcel}
@@ -477,8 +500,174 @@ export default function Devoluciones() {
                   <MicrosoftExcelLogo size={14} weight="bold" />
                   Excel
                 </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleApplyStatuses}
+                  disabled={applying || !preview?.documents?.length}
+                  title={t('eaBulkApplyStatuses')}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: "var(--accent)18", color: "var(--accent, #4F46E5)", border: "1px solid var(--accent)40",
+                    cursor: applying ? "default" : "pointer",
+                    opacity: applying ? 0.6 : 1,
+                  }}
+                  onMouseEnter={e => { if (!applying) e.currentTarget.style.background = "var(--accent)28"; }}
+                  onMouseLeave={e => e.currentTarget.style.background = "var(--accent)18"}>
+                  {applying ? (
+                    <span style={{ width: 14, height: 14, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                  ) : (
+                    <CheckCircle size={14} weight="bold" />
+                  )}
+                  {t('eaBulkApplyStatuses')} ({preview.documents.length})
+                </motion.button>
               </div>
             </div>
+
+            {/* Bulk status update result panel */}
+            <AnimatePresence>
+              {applyResult && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  style={{ overflow: "hidden" }}
+                >
+                  <div style={{
+                    borderTop: "1px solid var(--border)",
+                    background: applyResult.errors?.length > 0
+                      ? "#DC262608"
+                      : applyResult.skipped > 0
+                        ? "#D9770608"
+                        : "#16A34A08",
+                  }}>
+                    {/* Result header */}
+                    <div style={{
+                      padding: "10px 16px",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      borderBottom: "1px solid var(--border)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-main)" }}>
+                          {t('eaBulkResultTitle')}
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                          background: "#16A34A18", color: "#16A34A", border: "1px solid #16A34A40",
+                        }}>
+                          {applyResult.updated} {t('eaBulkStatusUpdated')}
+                        </span>
+                        {applyResult.skipped > 0 && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                            background: "#D9770618", color: "#D97706", border: "1px solid #D9770640",
+                          }}>
+                            {applyResult.skipped} {t('eaBulkStatusSkipped')}
+                          </span>
+                        )}
+                        {applyResult.errors?.length > 0 && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                            background: "#DC262618", color: "#DC2626", border: "1px solid #DC262640",
+                          }}>
+                            {applyResult.errors.length} {t('eaBulkStatusErrors')}
+                          </span>
+                        )}
+                      </div>
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setApplyResult(null)}
+                        style={{
+                          padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                          background: "var(--bg-hover)", color: "var(--text-muted)",
+                          border: "1px solid var(--border)", cursor: "pointer",
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = "var(--bg-sidebar)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "var(--bg-hover)"}
+                      >
+                        {t('eaBulkDismiss')}
+                      </motion.button>
+                    </div>
+
+                    {/* Result details table */}
+                    {applyResult.details?.length > 0 && (
+                      <div style={{ maxHeight: 200, overflowY: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                          <thead>
+                            <tr style={{ background: "var(--bg-sidebar)" }}>
+                              {["Doc. EIPSA", "Estado anterior", "Estado nuevo", ""].map(col => (
+                                <th key={col} className="text-text-muted" style={{
+                                  padding: "6px 10px", fontWeight: 700, fontSize: 9,
+                                  letterSpacing: "0.04em", textTransform: "uppercase",
+                                  borderRight: "1px solid var(--border)", textAlign: "left",
+                                }}>
+                                  {col}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {applyResult.details.map((d, i) => {
+                              const oldSc = getStatusColor(d.old_status);
+                              const newSc = getStatusColor(d.new_status);
+                              return (
+                                <tr key={i} style={{
+                                  background: i % 2 === 0 ? "var(--bg-card)" : "var(--bg-page)",
+                                  borderBottom: "1px solid var(--border)",
+                                }}>
+                                  <td className="text-text-sub" style={{ padding: "5px 10px", fontFamily: "monospace", fontSize: 10 }}>
+                                    {d.doc_eipsa || "—"}
+                                  </td>
+                                  <td style={{ padding: "5px 10px" }}>
+                                    {d.old_status ? (
+                                      <span style={{
+                                        display: "inline-flex", alignItems: "center", gap: 4,
+                                        padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600,
+                                        background: oldSc.bg, color: oldSc.text, border: `1px solid ${oldSc.border}`,
+                                      }}>
+                                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: oldSc.dot }} />
+                                        {d.old_status}
+                                      </span>
+                                    ) : (
+                                      <span className="text-text-muted" style={{ fontSize: 10 }}>—</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "5px 10px" }}>
+                                    {d.new_status ? (
+                                      <span style={{
+                                        display: "inline-flex", alignItems: "center", gap: 4,
+                                        padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600,
+                                        background: newSc.bg, color: newSc.text, border: `1px solid ${newSc.border}`,
+                                      }}>
+                                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: newSc.dot }} />
+                                        {d.new_status}
+                                      </span>
+                                    ) : (
+                                      <span className="text-text-muted" style={{ fontSize: 10 }}>—</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "5px 10px", textAlign: "center" }}>
+                                    {d.result === "updated" && (
+                                      <CheckCircle size={14} weight="bold" style={{ color: "#16A34A" }} />
+                                    )}
+                                    {d.result === "skipped" && (
+                                      <WarningCircle size={14} weight="bold" style={{ color: "#D97706" }} />
+                                    )}
+                                    {d.result === "error" && (
+                                      <XCircle size={14} weight="bold" style={{ color: "#DC2626" }} />
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 

@@ -11,6 +11,7 @@ from services.client_portal_service import (
     revoke_portal_access,
     get_client_documents,
     get_client_dashboard,
+    get_document_detail,
 )
 
 router = APIRouter()
@@ -77,3 +78,15 @@ def portal_dashboard(token: str = Query(...)):
     if not client:
         raise HTTPException(status_code=401, detail="Invalid or expired portal token")
     return get_client_dashboard(client["tenant_id"], client["client_name"])
+
+
+@router.get("/document/{doc_ref}")
+def portal_document_detail(doc_ref: str, token: str = Query(...)):
+    """Get detailed info for a single document including timeline/history."""
+    client = validate_portal_token(token)
+    if not client:
+        raise HTTPException(status_code=401, detail="Invalid or expired portal token")
+    detail = get_document_detail(client["tenant_id"], client["client_name"], doc_ref)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return detail

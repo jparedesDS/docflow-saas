@@ -42,15 +42,16 @@ class TestDocumentService:
         from services.document_service import DocumentService
         svc = DocumentService(data_repo)
         all_docs = svc.list_all()
-        if all_docs:
-            # Use the repo's actual ID column (first column or known candidate)
-            df = data_repo._load()
-            id_col = data_repo._get_id_column(df)
-            first_id = str(all_docs[0].get(id_col, ""))
-            if first_id:
-                result = svc.get_by_id(first_id)
-                assert result is not None
-                assert isinstance(result, dict)
+        if not all_docs:
+            pytest.skip("No test data in Excel")
+        df = data_repo._load()
+        id_col = data_repo._get_id_column(df)
+        first_id = str(all_docs[0].get(id_col, "")).strip()
+        if not first_id:
+            pytest.skip("First document has no ID")
+        result = svc.get_by_id(first_id)
+        assert result is not None
+        assert isinstance(result, dict)
 
 
 class TestMonitoringService:

@@ -216,6 +216,19 @@ export const translations = {
     sbRunBackup: "Ejecutar backup",
     sbSearchPlaceholder: "Buscar... (Ctrl+K)",
 
+    // Command Palette
+    cpSearchPlaceholder: "Buscar documentos, pedidos, reclamaciones...",
+    cpSearchShortcut: "Ctrl+K para buscar",
+    cpNoResults: "Sin resultados",
+    cpResults: "resultados",
+    cpDocument: "Documento",
+    cpPedido: "Pedido",
+    cpClaim: "Reclamación",
+    cpPressEnter: "Abrir",
+    cpPressEsc: "Cerrar",
+    cpTypeToSearch: "Escribe para buscar...",
+    cpNavigate: "Navegar",
+
     // App
     appCollapseSidebar: "Colapsar sidebar",
     appExpandSidebar: "Expandir sidebar",
@@ -419,6 +432,33 @@ export const translations = {
     claimInvalidAddress: "Dirección invalida",
     claimInvalidCC: "CC invalido",
 
+    // Escalation levels
+    escalationLevel: "Nivel de escalado",
+    reminder: "Recordatorio",
+    formalClaim: "Reclamaci\u00f3n formal",
+    escalation: "Escalado",
+    sendEscalated: "Enviar reclamaci\u00f3n",
+    escalationDesc1: "Se enviar\u00e1 un recordatorio cort\u00e9s al cliente solicitando confirmaci\u00f3n del estado de revisi\u00f3n de los documentos.",
+    escalationDesc2: "Se enviar\u00e1 una reclamaci\u00f3n formal mencionando plazos contractuales. Se incluir\u00e1 a direcci\u00f3n en copia.",
+    escalationDesc3: "Se enviar\u00e1 un escalado urgente requiriendo acci\u00f3n inmediata. Se incluir\u00e1 a direcci\u00f3n y al responsable comercial en copia.",
+
+    // KPI Trends
+    kpiTrends: "Tendencias",
+    monthlyEvolution: "Evoluci\u00f3n mensual",
+    approvalRate: "Tasa de aprobaci\u00f3n",
+    avgVelocity: "Velocidad media",
+    docsAtRisk: "Docs en riesgo",
+
+    // Command Palette
+    cpDocuments: "Documentos",
+    cpOrders: "Pedidos",
+    cpClaims: "Reclamaciones",
+
+    // Timeline
+    event: "evento",
+    events: "eventos",
+    critical: "CR\u00cdTICO",
+
     // EmailAssistants (Transmittals)
     eaBandeja: "Bandeja de entrada",
     eaReadingEmail: "Leyendo email...",
@@ -426,6 +466,16 @@ export const translations = {
     eaNoStatus: "Sin estado",
     eaDownload: "Descargar",
     eaViewOriginal: "Ver original",
+    eaBulkApplyStatuses: "Aplicar Estados",
+    eaBulkStatusSuccess: "{count} documentos actualizados correctamente",
+    eaBulkStatusError: "Error al actualizar estados",
+    eaBulkStatusSkipped: "omitidos",
+    eaBulkStatusUpdated: "actualizados",
+    eaBulkStatusErrors: "errores",
+    eaApplyConfirmTitle: "Aplicar estados al registro?",
+    eaApplyConfirmBody: "Se actualizarán {count} documentos con los estados del transmittal",
+    eaBulkResultTitle: "Resultado de actualización",
+    eaBulkDismiss: "Cerrar",
 
     // InboxAssistant
     iaRefresh: "Refrescar",
@@ -975,9 +1025,114 @@ export const translations = {
     openDashboard: "Abrir Dashboard",
     docsApproved: "aprobados",
 
+    // Order Predictions & Document Timeline
+    orderPredictions: "Prediccion de pedidos",
+    predictedDate: "Fecha estimada",
+    daysRemaining: "Dias restantes",
+    confidence: "Confianza",
+    highConfidence: "Alta",
+    mediumConfidence: "Media",
+    lowConfidence: "Baja",
+    docTimeline: "Linea de tiempo",
+    docRegistered: "Documento registrado",
+    sentToClient: "Enviado al cliente",
+    claimSent: "Reclamacion enviada",
+    commentAdded: "Comentario anadido",
+    revisionUpdated: "Revision actualizada",
+
     // EmailAssistants — templates
     eaUseTemplate: "Usar plantilla",
     eaTemplatePreview: "Vista previa de plantilla",
+
+    // Mi Mañana
+    mmMiManana: "Mi Mañana",
+    mmMyDocs: "Mis Documentos",
+    mmApprovedDocs: "Aprobados",
+    mmCriticalDocs: "Críticos",
+    mmPendingSend: "Sin Enviar",
+    mmReturnedToday: "Devueltos hoy",
+    mmSlaCritical: "SLA Crítico",
+    mmPendingClaims: "Reclamaciones pendientes",
+    mmNoReturnedDocs: "No hay documentos devueltos recientemente",
+    mmNoSlaCritical: "No hay documentos en riesgo SLA",
+    mmNoPendingClaims: "Sin reclamaciones pendientes",
+    mmDaysWaiting: "días esperando",
+    mmApproaching: "Próximo",
+    mmViewInDocs: "Ver en Documentos",
+    mmSendClaim: "Reclamar",
+    mmTeamAverage: "Media equipo",
+    mmReturnedCount: "devueltos",
+    mmSlaCount: "en riesgo SLA",
+    mmLoadError: "Error al cargar Mi Mañana",
+    mmUser: "Usuario",
+    mmNoTitle: "Sin título",
+    mmUrgency: "Urgencia",
+    mmUrgencyHigh: "Urgente",
+    mmUrgencyMedium: "Media",
+    mmUrgencyLow: "Baja",
+    mmTitle: "Título",
+    mmLastClaimed: "Último reclamo",
+
+    // Team Workload + Anomalies
+    tabWorkload: "Carga de Trabajo",
+    avgLoad: "Media por persona",
+    maxLoad: "Carga Maxima",
+    overloaded: "Sobrecargado",
+    underloaded: "Infracargado",
+    normal: "Normal",
+    anomalies: "Anomalias",
+    anomalyDetected: "Anomalia detectada",
+    clientAvgResponse: "Media de respuesta",
+    sigmaAbove: "\u03C3 por encima",
+    noAnomalies: "Sin anomalias detectadas",
+    showMore: "Ver todos",
+    showLess: "Mostrar menos",
+
+    // Portal
+    portalDocDetail: "Detalle del documento",
+    portalTimeline: "Historial",
+    portalProgress: "Progreso por pedido",
+    portalNoTimeline: "Sin historial disponible",
+
+    // Push notifications
+    pushPermissionTitle: "Notificaciones",
+    pushPermissionMsg: "Activar notificaciones del navegador",
+    pushEnabled: "Notificaciones activadas",
+    pushDisabled: "Notificaciones desactivadas",
+
+    // Chatbot
+    chatTitle: "Asistente DocFlow",
+    chatPlaceholder: "Escribe tu pregunta...",
+    chatSend: "Enviar",
+    chatClear: "Limpiar historial",
+    chatThinking: "Pensando...",
+    chatWelcome: "Hola! Soy el asistente de DocFlow. Puedo ayudarte con informacion sobre documentos, pedidos, reclamaciones y KPIs. En que puedo ayudarte?",
+    chatError: "Error al procesar la pregunta. Intenta de nuevo.",
+    chatNoApi: "El servicio de IA no esta disponible. Verifica la configuracion de ANTHROPIC_API_KEY.",
+    chatSubtitle: "Datos en tiempo real",
+
+    // Meeting minutes
+    mmGenerateMinutes: "Generar acta con IA",
+    mmMinutes: "Acta de reunion",
+    mmDecisions: "Decisiones",
+    mmActions: "Acciones",
+    mmNotes: "Notas de la reunion",
+    mmCreateTasks: "Crear tareas",
+    mmRegenerating: "Regenerando acta...",
+    mmNoNotes: "Escribe notas de la reunion para generar el acta",
+
+    // Folder sync
+    fsTitle: "Sincronizacion de carpetas",
+    fsStatus: "Estado del sync",
+    fsLastScan: "Ultimo escaneo",
+    fsTriggerScan: "Escanear ahora",
+    fsScanning: "Escaneando...",
+    fsNewFiles: "Archivos nuevos",
+    fsModifiedFiles: "Archivos modificados",
+    fsTotalScanned: "Total escaneados",
+    fsHistory: "Historial de escaneos",
+    fsNoAccess: "Carpeta de red no accesible",
+    fsLinkToOrder: "Vincular a pedido",
   },
   en: {
     // Main navigation (sidebar) — v3.0
@@ -1196,6 +1351,19 @@ export const translations = {
     sbRunBackup: "Run backup",
     sbSearchPlaceholder: "Search... (Ctrl+K)",
 
+    // Command Palette
+    cpSearchPlaceholder: "Search documents, orders, claims...",
+    cpSearchShortcut: "Ctrl+K to search",
+    cpNoResults: "No results",
+    cpResults: "results",
+    cpDocument: "Document",
+    cpPedido: "Order",
+    cpClaim: "Claim",
+    cpPressEnter: "Open",
+    cpPressEsc: "Close",
+    cpTypeToSearch: "Type to search...",
+    cpNavigate: "Navigate",
+
     // App
     appCollapseSidebar: "Collapse sidebar",
     appExpandSidebar: "Expand sidebar",
@@ -1399,6 +1567,33 @@ export const translations = {
     claimInvalidAddress: "Invalid address",
     claimInvalidCC: "Invalid CC",
 
+    // Escalation levels
+    escalationLevel: "Escalation level",
+    reminder: "Reminder",
+    formalClaim: "Formal claim",
+    escalation: "Escalation",
+    sendEscalated: "Send claim",
+    escalationDesc1: "A polite reminder will be sent to the client requesting confirmation of document review status.",
+    escalationDesc2: "A formal claim will be sent mentioning contractual deadlines. Direction will be CC'd.",
+    escalationDesc3: "An urgent escalation will be sent requiring immediate action. Direction and commercial manager will be CC'd.",
+
+    // KPI Trends
+    kpiTrends: "Trends",
+    monthlyEvolution: "Monthly evolution",
+    approvalRate: "Approval rate",
+    avgVelocity: "Avg velocity",
+    docsAtRisk: "Docs at risk",
+
+    // Command Palette
+    cpDocuments: "Documents",
+    cpOrders: "Orders",
+    cpClaims: "Claims",
+
+    // Timeline
+    event: "event",
+    events: "events",
+    critical: "CRITICAL",
+
     // EmailAssistants (Transmittals)
     eaBandeja: "Inbox",
     eaReadingEmail: "Reading email...",
@@ -1406,6 +1601,16 @@ export const translations = {
     eaNoStatus: "No status",
     eaDownload: "Download",
     eaViewOriginal: "View original",
+    eaBulkApplyStatuses: "Apply Statuses",
+    eaBulkStatusSuccess: "{count} documents updated successfully",
+    eaBulkStatusError: "Error updating statuses",
+    eaBulkStatusSkipped: "skipped",
+    eaBulkStatusUpdated: "updated",
+    eaBulkStatusErrors: "errors",
+    eaApplyConfirmTitle: "Apply statuses to registry?",
+    eaApplyConfirmBody: "{count} documents will be updated with transmittal statuses",
+    eaBulkResultTitle: "Update result",
+    eaBulkDismiss: "Dismiss",
 
     // InboxAssistant
     iaRefresh: "Refresh",
@@ -1955,8 +2160,113 @@ export const translations = {
     openDashboard: "Open Dashboard",
     docsApproved: "approved",
 
+    // Order Predictions & Document Timeline
+    orderPredictions: "Order predictions",
+    predictedDate: "Predicted date",
+    daysRemaining: "Days remaining",
+    confidence: "Confidence",
+    highConfidence: "High",
+    mediumConfidence: "Medium",
+    lowConfidence: "Low",
+    docTimeline: "Timeline",
+    docRegistered: "Document registered",
+    sentToClient: "Sent to client",
+    claimSent: "Claim sent",
+    commentAdded: "Comment added",
+    revisionUpdated: "Revision updated",
+
     // EmailAssistants — templates
     eaUseTemplate: "Use template",
     eaTemplatePreview: "Template preview",
+
+    // Mi Mañana
+    mmMiManana: "My Morning",
+    mmMyDocs: "My Documents",
+    mmApprovedDocs: "Approved",
+    mmCriticalDocs: "Critical",
+    mmPendingSend: "Not Sent",
+    mmReturnedToday: "Returned today",
+    mmSlaCritical: "Critical SLA",
+    mmPendingClaims: "Pending claims",
+    mmNoReturnedDocs: "No recently returned documents",
+    mmNoSlaCritical: "No SLA-risk documents",
+    mmNoPendingClaims: "No pending claims",
+    mmDaysWaiting: "days waiting",
+    mmApproaching: "Approaching",
+    mmViewInDocs: "View in Documents",
+    mmSendClaim: "Send claim",
+    mmTeamAverage: "Team avg",
+    mmReturnedCount: "returned",
+    mmSlaCount: "SLA at risk",
+    mmLoadError: "Error loading My Morning",
+    mmUser: "User",
+    mmNoTitle: "No title",
+    mmUrgency: "Urgency",
+    mmUrgencyHigh: "Urgent",
+    mmUrgencyMedium: "Medium",
+    mmUrgencyLow: "Low",
+    mmTitle: "Title",
+    mmLastClaimed: "Last claimed",
+
+    // Team Workload + Anomalies
+    tabWorkload: "Team Workload",
+    avgLoad: "Avg per person",
+    maxLoad: "Max Load",
+    overloaded: "Overloaded",
+    underloaded: "Underloaded",
+    normal: "Normal",
+    anomalies: "Anomalies",
+    anomalyDetected: "Anomaly detected",
+    clientAvgResponse: "Avg response",
+    sigmaAbove: "\u03C3 above",
+    noAnomalies: "No anomalies detected",
+    showMore: "Show all",
+    showLess: "Show less",
+
+    // Portal
+    portalDocDetail: "Document detail",
+    portalTimeline: "History",
+    portalProgress: "Progress by order",
+    portalNoTimeline: "No history available",
+
+    // Push notifications
+    pushPermissionTitle: "Notifications",
+    pushPermissionMsg: "Enable browser notifications",
+    pushEnabled: "Notifications enabled",
+    pushDisabled: "Notifications disabled",
+
+    // Chatbot
+    chatTitle: "DocFlow Assistant",
+    chatPlaceholder: "Type your question...",
+    chatSend: "Send",
+    chatClear: "Clear history",
+    chatThinking: "Thinking...",
+    chatWelcome: "Hi! I'm the DocFlow assistant. I can help you with information about documents, orders, claims and KPIs. How can I help you?",
+    chatError: "Error processing the question. Please try again.",
+    chatNoApi: "AI service is not available. Check the ANTHROPIC_API_KEY configuration.",
+    chatSubtitle: "Real-time data",
+
+    // Meeting minutes
+    mmGenerateMinutes: "Generate minutes with AI",
+    mmMinutes: "Meeting minutes",
+    mmDecisions: "Decisions",
+    mmActions: "Actions",
+    mmNotes: "Meeting notes",
+    mmCreateTasks: "Create tasks",
+    mmRegenerating: "Regenerating minutes...",
+    mmNoNotes: "Write meeting notes to generate the minutes",
+
+    // Folder sync
+    fsTitle: "Folder synchronization",
+    fsStatus: "Sync status",
+    fsLastScan: "Last scan",
+    fsTriggerScan: "Scan now",
+    fsScanning: "Scanning...",
+    fsNewFiles: "New files",
+    fsModifiedFiles: "Modified files",
+    fsTotalScanned: "Total scanned",
+    fsHistory: "Scan history",
+    fsNoAccess: "Network folder not accessible",
+    fsLinkToOrder: "Link to order",
   },
 };

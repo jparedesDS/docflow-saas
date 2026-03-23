@@ -80,6 +80,40 @@ class AnalyticsService:
             "generado": datetime.now().strftime("%d/%m/%Y %H:%M"),
         }
 
+    # ── Team Workload ──────────────────────────────────────────────────
+
+    def get_team_workload(self, docs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Team workload distribution with overload detection."""
+        por_resp = self._agrupar_por_responsable_doc(docs)
+
+        if not por_resp:
+            return {"members": [], "avg_load": 0, "max_load": 0, "std_dev": 0, "alerts": []}
+
+        totals = [r["total"] for r in por_resp]
+        avg_load = sum(totals) / len(totals) if totals else 0
+        max_load = max(totals) if totals else 0
+        std_dev = (sum((t - avg_load) ** 2 for t in totals) / len(totals)) ** 0.5 if len(totals) > 1 else 0
+
+        alerts = []
+        for r in por_resp:
+            r["overload"] = r["total"] > avg_load + std_dev  # >1σ above mean
+            r["underload"] = r["total"] < avg_load - std_dev if avg_load > std_dev else False
+            if r["overload"]:
+                alerts.append({
+                    "type": "overload",
+                    "responsable": r["responsable"],
+                    "total": r["total"],
+                    "avg": round(avg_load),
+                })
+
+        return {
+            "members": por_resp,
+            "avg_load": round(avg_load, 1),
+            "max_load": max_load,
+            "std_dev": round(std_dev, 1),
+            "alerts": alerts,
+        }
+
     # ── Agrupaciones ────────────────────────────────────────────────────
 
     def _agrupar_por_cliente(self, docs: List[Dict]) -> List[Dict]:

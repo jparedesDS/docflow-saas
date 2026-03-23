@@ -6,6 +6,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
+import structlog
+
+logger = structlog.get_logger("docflow.client_portal")
+
+_IS_POSTGRES = os.getenv("STORAGE_BACKEND", "excel") == "postgres"
 
 
 def _get_session():
@@ -20,7 +25,7 @@ def generate_portal_token(
     expires_days: int = 90,
 ) -> Optional[str]:
     """Generate a portal access token for a client. Returns the raw token."""
-    if os.getenv("STORAGE_BACKEND", "excel") != "postgres":
+    if not _IS_POSTGRES:
         return None
 
     from db.models import ClientPortalAccess
@@ -49,7 +54,7 @@ def generate_portal_token(
 
 def validate_portal_token(raw_token: str) -> Optional[dict]:
     """Validate a portal token and return client info if valid."""
-    if os.getenv("STORAGE_BACKEND", "excel") != "postgres":
+    if not _IS_POSTGRES:
         return None
 
     from db.models import ClientPortalAccess
@@ -75,7 +80,7 @@ def validate_portal_token(raw_token: str) -> Optional[dict]:
 
 def list_portal_accesses(tenant_id: int) -> list:
     """List all portal access entries for a tenant."""
-    if os.getenv("STORAGE_BACKEND", "excel") != "postgres":
+    if not _IS_POSTGRES:
         return []
 
     from db.models import ClientPortalAccess
@@ -102,7 +107,7 @@ def list_portal_accesses(tenant_id: int) -> list:
 
 def revoke_portal_access(tenant_id: int, access_id: int) -> bool:
     """Revoke a portal access by deleting it."""
-    if os.getenv("STORAGE_BACKEND", "excel") != "postgres":
+    if not _IS_POSTGRES:
         return False
 
     from db.models import ClientPortalAccess
@@ -127,7 +132,7 @@ def revoke_portal_access(tenant_id: int, access_id: int) -> bool:
 
 def get_client_documents(tenant_id: int, client_name: str, status: str = "") -> list:
     """Get documents for a specific client (read-only)."""
-    if os.getenv("STORAGE_BACKEND", "excel") != "postgres":
+    if not _IS_POSTGRES:
         return []
 
     from db.models import Document
@@ -176,3 +181,116 @@ def get_client_dashboard(tenant_id: int, client_name: str) -> dict:
         "rechazados": rechazados,
         "approval_rate": round(aprobados / total * 100, 1) if total > 0 else 0,
     }
+
+
+def _build_timeline(data: dict) -> list:
+    """Build a timeline of events from document JSONB data."""
+    timeline = []
+
+    # Creation / first known date
+    fecha_creacion = data.get("Fecha Creación", data.get("Fecha Creacion", ""))
+    if fecha_creacion:
+        timeline.append({
+            "date": str(fecha_creacion).split("T")[0],
+            "event": "Documento creado",
+            "type": "creation",
+        })
+
+    # Planned date
+    fecha_prevista = data.get("Fecha Prevista", "")
+    if fecha_prevista:
+        timeline.append({
+            "date": str(fecha_prevista).split("T")[0],
+            "event": "Fecha prevista de entrega",
+            "type": "planned",
+        })
+
+    # Send date
+    fecha_envio = data.get("Fecha Env. Doc.", "")
+    if fecha_envio:
+        timeline.append({
+            "date": str(fecha_envio).split("T")[0],
+            "event": "Documento enviado al cliente",
+            "type": "sent",
+        })
+
+    # Return / response date
+    fecha_devolucion = data.get("Fecha Dev. Doc.", data.get("Fecha Devolución", ""))
+    if fecha_devolucion:
+        timeline.append({
+            "date": str(fecha_devolucion).split("T")[0],
+            "event": "Respuesta recibida del cliente",
+            "type": "returned",
+        })
+
+    # Status change
+    estado = data.get("Estado", "")
+    if estado:
+        fecha_estado = data.get("Fecha Estado", data.get("Fecha Dev. Doc.", ""))
+        timeline.append({
+            "date": str(fecha_estado).split("T")[0] if fecha_estado else "",
+            "event": f"Estado: {estado}",
+            "type": "status",
+        })
+
+    # Revision info
+    revision = data.get("Nº Revisión", "")
+    if revision and str(revision).strip():
+        rev_num = str(revision).strip()
+        try:
+            if int(rev_num) > 0:
+                timeline.append({
+                    "date": str(fecha_envio).split("T")[0] if fecha_envio else "",
+                    "event": f"Revisión {rev_num} emitida",
+                    "type": "revision",
+                })
+        except (ValueError, TypeError):
+            timeline.append({
+                "date": str(fecha_envio).split("T")[0] if fecha_envio else "",
+                "event": f"Revisión {rev_num} emitida",
+                "type": "revision",
+            })
+
+    # Sort by date (empty dates go last)
+    timeline.sort(key=lambda e: e["date"] or "9999-99-99")
+
+    return timeline
+
+
+def get_document_detail(tenant_id: int, client_name: str, doc_ref: str) -> dict:
+    """Get detailed info for a single document including timeline/history."""
+    if not _IS_POSTGRES:
+        return {}
+
+    from db.models import Document
+
+    session = _get_session()
+    try:
+        doc = session.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.data["Cliente"].astext == client_name,
+            Document.data["Nº Doc. EIPSA"].astext == doc_ref,
+        ).first()
+
+        if not doc:
+            return {}
+
+        data = doc.data or {}
+        logger.info("portal_document_detail", doc_ref=doc_ref, client=client_name)
+        return {
+            "doc_eipsa": data.get("Nº Doc. EIPSA", ""),
+            "titulo": data.get("Título", data.get("Titulo", "")),
+            "estado": data.get("Estado", ""),
+            "tipo_doc": data.get("Tipo Doc.", ""),
+            "fecha_envio": data.get("Fecha Env. Doc.", ""),
+            "fecha_prevista": data.get("Fecha Prevista", ""),
+            "fecha_devolucion": data.get("Fecha Dev. Doc.", ""),
+            "revision": data.get("Nº Revisión", ""),
+            "dias_devolucion": data.get("Días Devolución", ""),
+            "pedido": data.get("Nº Pedido", ""),
+            "cliente": data.get("Cliente", ""),
+            "responsable": data.get("Repsonsable", ""),
+            "timeline": _build_timeline(data),
+        }
+    finally:
+        session.close()

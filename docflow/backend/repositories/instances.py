@@ -27,3 +27,6 @@ else:
     data_repo = ExcelRepository(DATA_ERP_PATH)
     consulta_repo = ExcelRepository(CONSULTA_ERP_PATH)
     tags_repo = ExcelRepository(TAGS_PATH, skiprows=[1])
+
+from services.monitoring_service import MonitoringService
+monitoring_service = MonitoringService(data_repo, consulta_repo)
