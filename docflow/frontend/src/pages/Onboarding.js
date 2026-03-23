@@ -2,14 +2,16 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Upload, Users, Gear } from "@phosphor-icons/react";
 import api from "../services/api";
-
-const STEPS = [
-  { key: "welcome", title: "Bienvenido a DocFlow", icon: CheckCircle },
-  { key: "invite", title: "Invita a tu equipo", icon: Users },
-  { key: "configure", title: "Configuración básica", icon: Gear },
-];
+import { useI18n } from "../contexts/I18nContext";
 
 function Onboarding({ tenant, onComplete }) {
+  const { t } = useI18n();
+
+  const STEPS = [
+    { key: "welcome", title: t("obWelcomeTitle"), icon: CheckCircle },
+    { key: "invite", title: t("obInviteTitle"), icon: Users },
+    { key: "configure", title: t("obConfigureTitle"), icon: Gear },
+  ];
   const [step, setStep] = useState(0);
   const [invites, setInvites] = useState([{ email: "", role: "Document Controller" }]);
   const [sending, setSending] = useState(false);
@@ -129,11 +131,10 @@ function Onboarding({ tenant, onComplete }) {
               <CheckCircle size={32} weight="bold" color="#FFF" />
             </div>
             <h2 style={{ fontSize: 22, fontWeight: 700, color: "#FFF", marginBottom: 8 }}>
-              {tenant?.name || "Tu organización"} está lista
+              {tenant?.name || t("obYourOrg")} {t("obIsReady")}
             </h2>
             <p style={{ fontSize: 14, color: "#71717A", lineHeight: 1.5, marginBottom: 28 }}>
-              Tu espacio de trabajo ha sido creado. Ahora puedes invitar a tu equipo
-              y configurar las integraciones.
+              {t("obWelcomeDesc")}
             </p>
             <button
               onClick={() => setStep(1)}
@@ -148,7 +149,7 @@ function Onboarding({ tenant, onComplete }) {
                 cursor: "pointer",
               }}
             >
-              Continuar
+              {t("obContinue")}
             </button>
           </motion.div>
         )}
@@ -163,10 +164,10 @@ function Onboarding({ tenant, onComplete }) {
             style={cardStyle}
           >
             <h2 style={{ fontSize: 18, fontWeight: 700, color: "#FFF", marginBottom: 4 }}>
-              Invita a tu equipo
+              {t("obInviteTitle")}
             </h2>
             <p style={{ fontSize: 13, color: "#71717A", marginBottom: 20 }}>
-              Envía invitaciones por email. Podrán crear su cuenta al recibirla.
+              {t("obInviteDesc")}
             </p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -208,7 +209,7 @@ function Onboarding({ tenant, onComplete }) {
                 marginBottom: 20,
               }}
             >
-              + Añadir otro
+              {t("obAddAnother")}
             </button>
 
             <div style={{ display: "flex", gap: 8 }}>
@@ -225,7 +226,7 @@ function Onboarding({ tenant, onComplete }) {
                   cursor: "pointer",
                 }}
               >
-                Saltar
+                {t("obSkip")}
               </button>
               <button
                 onClick={handleSendInvites}
@@ -243,7 +244,7 @@ function Onboarding({ tenant, onComplete }) {
                   opacity: sending ? 0.7 : 1,
                 }}
               >
-                {sending ? "Enviando..." : "Enviar invitaciones"}
+                {sending ? t("sending") : t("obSendInvitations")}
               </button>
             </div>
           </motion.div>
@@ -273,11 +274,10 @@ function Onboarding({ tenant, onComplete }) {
               <CheckCircle size={32} weight="bold" color="#FFF" />
             </div>
             <h2 style={{ fontSize: 22, fontWeight: 700, color: "#FFF", marginBottom: 8 }}>
-              Todo listo
+              {t("obAllReady")}
             </h2>
             <p style={{ fontSize: 14, color: "#71717A", lineHeight: 1.5, marginBottom: 28 }}>
-              Tu espacio de trabajo está configurado. Puedes acceder a todas las
-              funcionalidades desde el panel principal.
+              {t("obAllReadyDesc")}
             </p>
             <button
               onClick={handleFinish}
@@ -292,7 +292,7 @@ function Onboarding({ tenant, onComplete }) {
                 cursor: "pointer",
               }}
             >
-              Ir al dashboard
+              {t("obGoToDashboard")}
             </button>
           </motion.div>
         )}

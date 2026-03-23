@@ -17,7 +17,9 @@ from routers import (
     documents, emails, erp, claims, ai, reports, notifications,
     transmittals, analytics, inbox, agenda, docusign, personal,
     backup, health, auth, templates, polling, projects, search,
-    schedules, tenants, billing, admin,
+    schedules, tenants, billing, admin, workflows,
+    audit, comments, saved_filters, attachments, webhooks_config, api_keys,
+    classification, portal, response_templates, predictions,
 )
 from utils.config import CORS_ORIGINS
 from utils.logging_config import setup_logging
@@ -108,6 +110,8 @@ PUBLIC_PREFIXES = (
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/api/v1/portal/documents",
+    "/api/v1/portal/dashboard",
 )
 
 
@@ -128,6 +132,28 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         # Allow OPTIONS (CORS preflight)
         if request.method == "OPTIONS":
             return await call_next(request)
+
+        # Try API Key auth first (X-API-Key header)
+        api_key_header = request.headers.get("x-api-key", "")
+        if api_key_header:
+            try:
+                from services.api_key_service import validate_key
+                key_info = validate_key(api_key_header)
+                if key_info:
+                    request.state.user = {
+                        "username": f"api-key:{key_info['name']}",
+                        "role": "api",
+                        "initials": "API",
+                        "tenant_id": key_info["tenant_id"],
+                        "scopes": key_info["scopes"],
+                    }
+                    return await call_next(request)
+            except Exception:
+                pass
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid API key"},
+            )
 
         # Extract and validate JWT
         auth_header = request.headers.get("authorization", "")
@@ -231,6 +257,17 @@ app.include_router(schedules.router, prefix="/api/v1/schedules", tags=["schedule
 app.include_router(tenants.router, prefix="/api/v1/tenants", tags=["tenants"])
 app.include_router(billing.router, prefix="/api/v1/billing", tags=["billing"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(workflows.router, prefix="/api/v1/workflows", tags=["workflows"])
+app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
+app.include_router(comments.router, prefix="/api/v1/comments", tags=["comments"])
+app.include_router(saved_filters.router, prefix="/api/v1/filters", tags=["filters"])
+app.include_router(attachments.router, prefix="/api/v1/attachments", tags=["attachments"])
+app.include_router(webhooks_config.router, prefix="/api/v1/webhooks", tags=["webhooks"])
+app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["api-keys"])
+app.include_router(classification.router, prefix="/api/v1/classification", tags=["classification"])
+app.include_router(portal.router, prefix="/api/v1/portal", tags=["portal"])
+app.include_router(response_templates.router, prefix="/api/v1/response-templates", tags=["response-templates"])
+app.include_router(predictions.router, prefix="/api/v1/predictions", tags=["predictions"])
 
 
 @app.get("/")

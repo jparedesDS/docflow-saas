@@ -1,7 +1,7 @@
 import React, { useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 
-export default function SpotlightCard({ children, className = "", style = {} }) {
+export default function SpotlightCard({ children, className = "", style = {}, onClick }) {
   const ref = useRef(null);
 
   const handleMouseMove = useCallback((e) => {
@@ -16,6 +16,7 @@ export default function SpotlightCard({ children, className = "", style = {} }) 
   return (
     <motion.div
       ref={ref}
+      onClick={onClick}
       onMouseMove={handleMouseMove}
       whileHover={{ scale: 1.008 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}

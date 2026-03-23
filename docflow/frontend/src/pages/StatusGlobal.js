@@ -4,7 +4,8 @@ import api from "../services/api";
 import { useToast } from "../contexts/ToastContext";
 import SkeletonCard from "../components/SkeletonCard";
 import PageHeader from "../components/PageHeader";
-import { ArrowClockwise, DownloadSimple, Copy, CheckCircle, ArrowUUpLeft, PaperPlaneTilt, ClockCountdown, FolderSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, DownloadSimple, Copy, CheckCircle, ArrowUUpLeft, PaperPlaneTilt, ClockCountdown, FolderSimple, ArrowSquareOut } from "@phosphor-icons/react";
+import ProjectPreviewPopover from "../components/ProjectPreviewPopover";
 import { API_BASE } from "../config";
 import { STATUS_COLORS as STATUS_COLORS_INLINE } from "../constants/status";
 import { diasDesde } from "../utils/dates";
@@ -43,6 +44,10 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
   const [expandSort, setExpandSort] = useState({});
   const [expandFilter, setExpandFilter] = useState({});
   const debounceRef = useRef(null);
+  const [hoveredPedido, setHoveredPedido] = useState(null);
+  const [popoverAnchor, setPopoverAnchor] = useState(null);
+  const hoverTimerRef = useRef(null);
+  const graceTimerRef = useRef(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -105,6 +110,31 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
       setTimeout(() => setCopyMsg(null), 5000);
     }
   };
+
+  const handlePedidoHoverEnter = useCallback((pedidoData, el) => {
+    clearTimeout(graceTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setHoveredPedido(pedidoData);
+      setPopoverAnchor(el);
+    }, 400);
+  }, []);
+
+  const handlePedidoHoverLeave = useCallback(() => {
+    clearTimeout(hoverTimerRef.current);
+    graceTimerRef.current = setTimeout(() => {
+      setHoveredPedido(null);
+      setPopoverAnchor(null);
+    }, 200);
+  }, []);
+
+  const handlePopoverEnter = useCallback(() => {
+    clearTimeout(graceTimerRef.current);
+  }, []);
+
+  const handlePopoverLeave = useCallback(() => {
+    setHoveredPedido(null);
+    setPopoverAnchor(null);
+  }, []);
 
   const pedidosPorSeccion = useMemo(() => {
     if (!reportData) return {};
@@ -399,7 +429,6 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
                 { label: "Progreso", w: 220, center: false },
                 { label: "Estado", w: null, center: true },
                 { label: "Crít.", w: 60, center: true },
-                ...(onSelectPedido ? [{ label: "", w: 40, center: true }] : []),
               ].map((h, i) => (
                 <th key={i} className="text-text-muted" style={{
                   padding: "10px 12px", fontWeight: 700,
@@ -438,8 +467,8 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
                   />
                 </td>
               ))}
-              {[...Array(onSelectPedido ? 5 : 4)].map((_, i) => (
-                <td key={i} style={{ borderRight: i < (onSelectPedido ? 4 : 3) ? "1px solid var(--border)" : "none" }} />
+              {[...Array(4)].map((_, i) => (
+                <td key={i} style={{ borderRight: i < 3 ? "1px solid var(--border)" : "none" }} />
               ))}
             </tr>
           </thead>
@@ -457,8 +486,17 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
                       cursor: "pointer", borderBottom: "1px solid var(--border)",
                       transition: "background 0.12s",
                     }}
-                    onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = i % 2 === 0 ? "var(--bg-card)" : "var(--bg-page)"; }}>
+                    onMouseEnter={e => {
+                      if (!isExp) e.currentTarget.style.background = "var(--bg-hover)";
+                      if (onSelectPedido) {
+                        const anchor = e.currentTarget.querySelector(".pedido-name");
+                        if (anchor) handlePedidoHoverEnter(p, anchor);
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isExp) e.currentTarget.style.background = i % 2 === 0 ? "var(--bg-card)" : "var(--bg-page)";
+                      handlePedidoHoverLeave();
+                    }}>
 
                     <td style={{ padding: "8px 6px", width: 36, textAlign: "center", borderLeft: `3px solid ${healthColor}` }}>
                       <svg style={{
@@ -470,7 +508,35 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
                     </td>
 
                     <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                      <span style={{ fontWeight: 700, color: "var(--accent)", fontSize: 13 }}>{p.pedido}</span>
+                      <span
+                        className="pedido-name"
+                        onClick={(e) => { if (onSelectPedido) { e.stopPropagation(); onSelectPedido(p.pedido); }}}
+                        onMouseEnter={(e) => {
+                          if (onSelectPedido) {
+                            e.currentTarget.style.textDecoration = "underline";
+                            const icon = e.currentTarget.querySelector(".pedido-link-icon");
+                            if (icon) icon.style.opacity = "1";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.textDecoration = "none";
+                          const icon = e.currentTarget.querySelector(".pedido-link-icon");
+                          if (icon) icon.style.opacity = "0.4";
+                        }}
+                        style={{
+                          fontWeight: 700, color: "var(--accent)", fontSize: 13,
+                          cursor: onSelectPedido ? "pointer" : "default",
+                          textDecoration: "none",
+                          transition: "text-decoration 0.15s",
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                        }}
+                      >
+                        {p.pedido}
+                        {onSelectPedido && (
+                          <ArrowSquareOut size={12} weight="bold" className="pedido-link-icon"
+                            style={{ opacity: 0.4, transition: "opacity 0.15s" }} />
+                        )}
+                      </span>
                       {p.suplementos > 0 && (
                         <span style={{
                           marginLeft: 6, fontSize: 9, fontWeight: 700,
@@ -553,26 +619,11 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
                       })()}
                     </td>
 
-                    {onSelectPedido && (
-                      <td style={{ padding: "8px 6px", textAlign: "center" }}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onSelectPedido(p.pedido); }}
-                          title="Ver proyecto"
-                          style={{
-                            background: "none", border: "1px solid var(--border)",
-                            borderRadius: 6, padding: "3px 8px", cursor: "pointer",
-                            fontSize: 10, fontWeight: 600, color: "var(--accent)",
-                          }}
-                        >
-                          ➜
-                        </button>
-                      </td>
-                    )}
                   </tr>
 
                   {isExp && (
                     <tr>
-                      <td colSpan={onSelectPedido ? 11 : 10} style={{ padding: 0, borderBottom: `2px solid ${healthColor}66` }}>
+                      <td colSpan={10} style={{ padding: 0, borderBottom: `2px solid ${healthColor}66` }}>
                         <ExpandedDocs
                       docs={filteredExpandedDocs}
                       loading={loadingDocs}
@@ -615,6 +666,20 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
           </div>
         ))}
       </div>
+
+      {/* Hover Preview Popover */}
+      <AnimatePresence>
+        {hoveredPedido && popoverAnchor && onSelectPedido && (
+          <ProjectPreviewPopover
+            pedido={hoveredPedido}
+            anchor={popoverAnchor}
+            onNavigate={() => { onSelectPedido(hoveredPedido.pedido); setHoveredPedido(null); }}
+            onMouseEnter={handlePopoverEnter}
+            onMouseLeave={handlePopoverLeave}
+            t={t}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

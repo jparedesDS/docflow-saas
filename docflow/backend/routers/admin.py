@@ -217,3 +217,75 @@ async def global_stats(admin: dict = Depends(_require_superadmin)):
         }
     finally:
         session.close()
+
+
+@router.get("/activity")
+async def platform_activity(admin: dict = Depends(_require_superadmin)):
+    """Recent platform activity aggregated from multiple sources."""
+    from datetime import datetime, timedelta, timezone
+    from db.database import SessionLocal
+    from db.models import Tenant, User, UsageRecord
+    from sqlalchemy import desc
+
+    session = SessionLocal()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    events = []
+
+    try:
+        # Recent tenant registrations
+        recent_tenants = session.query(Tenant).filter(
+            Tenant.created_at >= cutoff,
+        ).order_by(desc(Tenant.created_at)).limit(50).all()
+
+        for t in recent_tenants:
+            events.append({
+                "type": "tenant_created",
+                "description": f"Organization '{t.name}' registered",
+                "tenant_name": t.name,
+                "tenant_id": t.id,
+                "timestamp": t.created_at.isoformat() if t.created_at else None,
+                "metadata": {"plan": t.plan, "slug": t.slug},
+            })
+
+        # Recent user signups
+        recent_users = session.query(User, Tenant.name.label("tenant_name")).join(
+            Tenant, User.tenant_id == Tenant.id,
+        ).filter(
+            User.created_at >= cutoff,
+        ).order_by(desc(User.created_at)).limit(50).all()
+
+        for u, tenant_name in recent_users:
+            events.append({
+                "type": "user_created",
+                "description": f"User '{u.name}' joined '{tenant_name}'",
+                "tenant_name": tenant_name,
+                "tenant_id": u.tenant_id,
+                "timestamp": u.created_at.isoformat() if u.created_at else None,
+                "metadata": {"role": u.role, "username": u.username},
+            })
+
+        # Recent usage updates
+        recent_usage = session.query(UsageRecord, Tenant.name.label("tenant_name")).join(
+            Tenant, UsageRecord.tenant_id == Tenant.id,
+        ).order_by(desc(UsageRecord.month)).limit(20).all()
+
+        for ur, tenant_name in recent_usage:
+            events.append({
+                "type": "usage_update",
+                "description": f"Usage for '{tenant_name}' — {ur.month}",
+                "tenant_name": tenant_name,
+                "tenant_id": ur.tenant_id,
+                "timestamp": ur.month + "-01T00:00:00+00:00",
+                "metadata": {
+                    "api_calls": ur.api_calls,
+                    "documents_created": ur.documents_created,
+                    "emails_sent": ur.emails_sent,
+                },
+            })
+
+        # Sort all events by timestamp descending
+        events.sort(key=lambda e: e.get("timestamp") or "", reverse=True)
+        return events[:100]
+
+    finally:
+        session.close()

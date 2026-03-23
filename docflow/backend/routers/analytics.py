@@ -1,8 +1,12 @@
+import re
+
+import pandas as pd
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
+from services.supplier_scorecard_service import get_scorecard
 from repositories.instances import data_repo, consulta_repo
 from services.smtp_service import send_html_email
 
@@ -84,3 +88,75 @@ def send_alerts(req: AlertsRequest):
         html_body=html,
     )
     return {"sent": True, "count": len(urgencias)}
+
+
+@router.get("/scorecard")
+def get_scorecard_endpoint():
+    """Scorecard de proveedores/clientes — mapea campos del servicio a lo que espera el frontend."""
+    data = get_scorecard(tenant_id=0)
+    return [
+        {
+            "client": row.get("client", ""),
+            "score": row.get("score", 0),
+            "approval_rate": row.get("approval_rate_first_rev", 0),
+            "avg_response_days": row.get("avg_response_days", 0),
+            "critical_docs": row.get("critical_docs_count", 0),
+            "total_docs": row.get("total_docs", 0),
+            "trend": [],
+        }
+        for row in data
+    ]
+
+
+@router.get("/s-curve")
+def get_s_curve():
+    """Curva S global — baseline lineal vs % acumulado de aprobados por mes."""
+    docs = monitoring_service.get_monitoring_data()
+    if not docs:
+        return {"baseline": [], "actual": [], "predicted": []}
+
+    df = pd.DataFrame(docs)
+    # Determinar columna de fecha
+    date_col = None
+    for col in ("Fecha Env. Doc.", "Fecha Pedido"):
+        if col in df.columns:
+            date_col = col
+            break
+    if not date_col:
+        return {"baseline": [], "actual": [], "predicted": []}
+
+    df["_date"] = df[date_col].fillna("")
+    df = df[df["_date"] != ""]
+    if df.empty:
+        return {"baseline": [], "actual": [], "predicted": []}
+
+    # Extraer mes (YYYY-MM)
+    df["_month"] = df["_date"].str[:7]
+    total = len(df)
+
+    # Agrupar por mes
+    months = {}
+    for _, row in df.iterrows():
+        m = row["_month"]
+        if m not in months:
+            months[m] = {"approved": 0, "total": 0}
+        months[m]["total"] += 1
+        estado = str(row.get("Estado", "") or "")
+        if re.search(r"aprobado", estado, re.IGNORECASE):
+            months[m]["approved"] += 1
+
+    keys = sorted(months.keys())
+    if not keys:
+        return {"baseline": [], "actual": [], "predicted": []}
+
+    step = 100.0 / len(keys)
+    baseline = []
+    actual = []
+    cum_approved = 0
+
+    for i, m in enumerate(keys):
+        cum_approved += months[m]["approved"]
+        baseline.append({"month": m, "value": round(step * (i + 1))})
+        actual.append({"month": m, "value": round((cum_approved / total) * 100)})
+
+    return {"baseline": baseline, "actual": actual, "predicted": []}

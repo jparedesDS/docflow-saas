@@ -8,6 +8,7 @@ import SectionTitle from "../components/ui/SectionTitle";
 import SkeletonCard from "../components/SkeletonCard";
 import ReportCenter from "./ReportCenter";
 import Personal from "./Personal";
+import SupplierScorecard from "./SupplierScorecard";
 import api from "../services/api";
 import { useI18n } from "../contexts/I18nContext";
 import {
@@ -38,6 +39,7 @@ export default function ReportsHub({ onTabChange }) {
     { key: "rendimiento", label: t('tabRendimiento') },
     { key: "equipo", label: t('tabEquipo') },
     { key: "centro", label: t('tabReportCenter') },
+    { key: "scorecard", label: "Scorecard" },
   ], [t]);
 
   useEffect(() => {
@@ -73,7 +75,16 @@ export default function ReportsHub({ onTabChange }) {
     return (
       <div>
         <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} layoutId="reports-tab" />
-        <div style={{ marginTop: 20 }}><ReportCenter /></div>
+        <div style={{ marginTop: 20 }}><ReportCenter mode="limited" /></div>
+      </div>
+    );
+  }
+
+  if (activeTab === "scorecard") {
+    return (
+      <div>
+        <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} layoutId="reports-tab" />
+        <div style={{ marginTop: 20 }}><SupplierScorecard /></div>
       </div>
     );
   }

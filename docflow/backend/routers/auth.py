@@ -14,6 +14,7 @@ from services.auth_service import (
     verify_refresh_token,
 )
 from utils.auth_middleware import get_current_user
+from utils.encryption import encrypt_value, decrypt_value
 from utils.json_store import read_json, write_json
 
 router = APIRouter(tags=["auth"])
@@ -37,7 +38,7 @@ def _load_users_json() -> dict:
             users[username] = {
                 "name": info["nombre"],
                 "initials": initials,
-                "role": "Document Controller" if initials == "JP" else "Comercial",
+                "role": "admin" if initials == "JP" else "Comercial",
                 "password_hash": hash_password(_DEFAULT_PASSWORD),
             }
         _save_users_json(users)
@@ -100,15 +101,16 @@ def _list_users_pg(tenant_id: int):
     try:
         users = session.query(User).filter(
             User.tenant_id == tenant_id,
-            User.is_active == True,
         ).all()
         return [
             {
+                "id": u.id,
                 "username": u.username,
                 "name": u.name,
                 "initials": u.initials,
                 "role": u.role,
                 "email": u.email,
+                "is_active": u.is_active,
             }
             for u in users
         ]
@@ -149,6 +151,11 @@ class ChangePasswordRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class UpdateUserRequest(BaseModel):
+    role: str | None = None
+    is_active: bool | None = None
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────────
@@ -318,6 +325,116 @@ async def change_password(
     user["password_hash"] = hash_password(body.new_password)
     _save_users_json(users)
     return {"detail": "Password changed successfully"}
+
+
+@router.put("/users/{user_id}")
+async def update_user(
+    user_id: str,
+    body: UpdateUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update a user's role or active status (admin/DC only)."""
+    if current_user.get("role") not in ("admin", "Document Controller"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    if STORAGE_BACKEND == "postgres":
+        try:
+            uid = int(user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user ID")
+
+        from db.models import User
+        session = _get_db_session()
+        try:
+            tenant_id = current_user.get("tenant_id", 1)
+            user = session.query(User).filter(
+                User.id == uid,
+                User.tenant_id == tenant_id,
+            ).first()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            if body.is_active is False and user.username == current_user["username"]:
+                raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+
+            if body.role is not None:
+                user.role = body.role
+            if body.is_active is not None:
+                user.is_active = body.is_active
+
+            session.commit()
+            return {
+                "id": user.id,
+                "username": user.username,
+                "name": user.name,
+                "role": user.role,
+                "is_active": user.is_active,
+            }
+        except HTTPException:
+            raise
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    # JSON mode
+    users = _load_users_json()
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.role is not None:
+        users[user_id]["role"] = body.role
+        _save_users_json(users)
+    return {
+        "username": user_id,
+        "name": users[user_id].get("name", user_id),
+        "role": users[user_id].get("role", ""),
+    }
+
+
+# ── Email settings ──────────────────────────────────────────────────────────
+
+
+class EmailSettingsRequest(BaseModel):
+    imap_email: str
+    imap_password: str
+
+
+@router.get("/me/email-settings")
+async def get_email_settings(current_user: dict = Depends(get_current_user)):
+    users = _load_users_json()
+    user = users.get(current_user["username"], {})
+    return {
+        "imap_email": user.get("imap_email", ""),
+        "has_password": bool(user.get("imap_password")),
+    }
+
+
+@router.put("/me/email-settings")
+async def save_email_settings(body: EmailSettingsRequest, current_user: dict = Depends(get_current_user)):
+    users = _load_users_json()
+    username = current_user["username"]
+    if username not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    users[username]["imap_email"] = body.imap_email
+    users[username]["imap_password"] = encrypt_value(body.imap_password)
+    _save_users_json(users)
+    return {"detail": "Email settings saved"}
+
+
+@router.post("/me/test-email")
+async def test_email_connection(body: EmailSettingsRequest, current_user: dict = Depends(get_current_user)):
+    import imaplib as _imaplib
+    from utils.config import IMAP_HOST, IMAP_PORT
+    try:
+        conn = _imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+        conn.login(body.imap_email, body.imap_password)
+        conn.select("INBOX")
+        conn.close()
+        conn.logout()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {e}")
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

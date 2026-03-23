@@ -1,6 +1,6 @@
 # DocFlow
 
-SaaS multi-tenant de gestión documental. Originalmente herramienta interna de EIPSA, ahora soporta múltiples organizaciones con aislamiento de datos row-level.
+SaaS multi-tenant de gestión documental (EIPSA → multi-organización). Aislamiento row-level por `tenant_id`.
 
 ## Stack
 
@@ -8,182 +8,119 @@ SaaS multi-tenant de gestión documental. Originalmente herramienta interna de E
 - **Frontend**: React 18 (CRA, sin react-router) — `docflow/frontend/src/`
 - **Base de datos**: PostgreSQL 16 (SQLAlchemy 2.0 + Alembic) — fallback a Excel via `STORAGE_BACKEND`
 - **Estilos**: Tailwind CSS 3 (`darkMode: 'class'`) + CSS vars en `index.css`
-- **Iconos**: Phosphor Icons (`@phosphor-icons/react`) + Heroicons
-- **Gráficas**: Recharts
-- **Animaciones**: Framer Motion
-- **HTTP client**: Axios (centralizado en `services/api.js`)
-- **Auth**: JWT (python-jose + bcrypt) con `tenant_id` en payload
+- **Iconos**: Phosphor Icons + Heroicons | **Gráficas**: Recharts | **Animaciones**: Framer Motion
+- **HTTP**: Axios centralizado en `services/api.js`
+- **Auth**: JWT (python-jose + bcrypt), payload: `{sub, role, initials, tenant_id, exp}`
 - **Billing**: Stripe (checkout, portal, webhooks)
 - **Infra**: Docker Compose (PostgreSQL, Redis, backend, frontend)
 
 ## Comandos
 
 ```bash
-# Backend (modo Excel — original)
+# Backend
 cd docflow/backend
 pip install -r ../../requirements.txt
-uvicorn main:app --reload --port 8000
-
-# Backend (modo PostgreSQL)
-STORAGE_BACKEND=postgres DATABASE_URL=postgresql://... uvicorn main:app --reload
-
-# Migraciones
-cd docflow/backend
-alembic upgrade head
-
-# Import Excel → PostgreSQL
-cd docflow/backend
-python scripts/import_excel.py
+uvicorn main:app --reload --port 8000                                    # modo Excel
+STORAGE_BACKEND=postgres DATABASE_URL=postgresql://... uvicorn main:app   # modo PostgreSQL
+alembic upgrade head                                                      # migraciones
+python scripts/import_excel.py                                            # Excel → Postgres
 
 # Frontend
-cd docflow/frontend
-npm install
-npm start          # dev en :3000
-npm run build      # producción
+cd docflow/frontend && npm install && npm start    # dev :3000
+npm run build                                       # producción
 
-# Docker (desarrollo)
-docker compose up -d
-
-# Docker (producción)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Docker
+docker compose up -d                                                      # desarrollo
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d     # producción
 ```
 
-## Estructura del proyecto
+## Decisiones de arquitectura
 
-```
-docflow/
-├── backend/
-│   ├── main.py                    # FastAPI app + APScheduler + middleware stack
-│   ├── db/
-│   │   ├── database.py            # SQLAlchemy engine + get_db() dependency
-│   │   └── models.py              # ORM models (17 tablas, todas con tenant_id)
-│   ├── alembic/                   # Migraciones PostgreSQL
-│   ├── routers/                   # Endpoints API (23 módulos)
-│   │   ├── auth.py                # Login, refresh, /me, /users (JSON o Postgres)
-│   │   ├── tenants.py             # Registro, invitaciones, settings
-│   │   ├── billing.py             # Stripe checkout, portal, webhooks, usage
-│   │   └── admin.py               # Superadmin: listar/editar tenants, impersonar
-│   ├── services/                  # Lógica de negocio (28 módulos)
-│   │   ├── tenant_service.py      # Registro, invitaciones, settings per-tenant
-│   │   ├── plan_service.py        # Planes (free/pro/enterprise), feature flags, quotas
-│   │   ├── billing_service.py     # Stripe customer, subscriptions, webhooks
-│   │   ├── usage_service.py       # Contadores mensuales por tenant
-│   │   └── parsers/               # Parsers de email
-│   ├── repositories/
-│   │   ├── base_repository.py     # Interfaz abstracta
-│   │   ├── excel_repository.py    # Implementación Excel (TTL cache 60s)
-│   │   ├── postgres_repository.py # Implementación PostgreSQL (JSONB + tenant_id)
-│   │   ├── instances.py           # Singletons (switch STORAGE_BACKEND)
-│   │   └── factory.py             # FastAPI dependencies per-request
-│   ├── scripts/
-│   │   └── import_excel.py        # Migración Excel → PostgreSQL
-│   ├── models/                    # Pydantic models
-│   └── utils/
-│       ├── config.py              # USERS, constantes, env vars
-│       ├── json_store.py          # read_json/write_json con file locking
-│       ├── auth_middleware.py     # JWT dependencies (tenant_id incluido)
-│       ├── rate_limit.py          # Rate limiting por IP + por tenant/plan
-│       └── logging_config.py     # structlog setup
-├── frontend/src/
-│   ├── App.js                     # Sidebar + routing + registro
-│   ├── pages/
-│   │   ├── Register.js            # Formulario de registro de organización
-│   │   ├── Onboarding.js          # Wizard post-registro
-│   │   ├── AdminDashboard.js      # Panel superadmin (gestión de tenants)
-│   │   └── ...                    # 24+ páginas de la app
-│   ├── components/
-│   │   └── LoginScreen.js         # Login con selector de usuarios + email + "Crear cuenta"
-│   ├── contexts/
-│   │   ├── TenantContext.js       # Fetch real de /tenants/me + feature flags
-│   │   └── ...
-│   └── services/
-│       └── api.js                 # Axios con JWT + X-Tenant-Id header
-```
+### Multi-Tenancy
+- Row-level: `tenant_id` FK en las 17 tablas ORM
+- `STORAGE_BACKEND=excel` (default, singletons) | `postgres` (JSONB + filtro automático por tenant)
+- Planes: `free` (3 users, 500 docs) · `pro` (15 users, 10K docs) · `enterprise` (ilimitado)
 
-## Multi-Tenancy
+### Navegación (v3.0)
+- Sin react-router. `App.js` maneja `activeSection` (sidebar) + lazy-load de páginas
+- Cada hub gestiona tabs internos con `TabBar.js`. Breadcrumbs via `onTabChange`
+- Agenda y Notificaciones: paneles laterales desde topbar
 
-**Arquitectura**: Row-level tenancy — `tenant_id` en cada tabla.
+### Repository Pattern
+- `BaseRepository` → `ExcelRepository` (pandas + TTL 60s) | `PostgresRepository` (JSONB + tenant_id)
+- Código nuevo: `Depends(get_data_repo)` de `repositories/factory.py`
+- Código existente: `instances.py` (auto-switch por env var)
 
-**Switch de storage** via `STORAGE_BACKEND`:
-- `excel` (default): Comportamiento original, ExcelRepository singletons
-- `postgres`: PostgresRepository con filtro automático por tenant_id
+## Convenciones
 
-**Tablas principales**: `tenants`, `users`, `documents` (JSONB), `consultas` (JSONB), `tags_inspections` (JSONB), `agenda_items`, `claims_log`, `notifications`, `email_templates`, `scheduled_reports`, `processed_emails`, `invitations`, `tenant_settings`, `billing_info`, `usage_records`
+### Frontend
+- **Status colors**: Siempre usar exports de `constants/status.js`. NUNCA hardcodear colores de estado
+- **HTTP**: `api.get/post` de `services/api.js`. Cero `fetch()` directo
+- **Fechas**: Funciones de `utils/dates.js`. No formatear inline
+- **Toasts**: `useToast()` → `showToast(msg, type, duration)`
+- **Tema**: CSS vars (`--bg-page`, `--bg-card`, `--border`, `--text-main`). Dark mode via class `dark`
+- **i18n**: `useI18n()` → `t('key')`. Keys en `translations/index.js`
+- **Iconos**: Phosphor (`weight="thin"` empty states, `weight="bold"` acciones)
+- **Feature flags**: `useTenant().hasFeature('name')` para condicionar UI
 
-**Planes**:
-- `free`: 3 users, 500 docs, features limitados
-- `pro`: 15 users, 10K docs, todas las features
-- `enterprise`: ilimitado
-
-**JWT payload**: `{sub, role, initials, tenant_id, exp}`
-
-## Arquitectura de navegación (v3.0)
-
-No hay react-router. `App.js` maneja `activeSection` (sidebar) y cada hub maneja sus tabs internos con `TabBar.js`.
-
-| Sidebar          | Hub/Página          | Tabs internos                                      |
-|------------------|---------------------|---------------------------------------------------|
-| Inicio           | Dashboard.js        | — (funnel, activity, team workload, quick access)  |
-| Proyectos        | ProjectsHub.js      | Vista General, Seguimiento, Urgencias              |
-| Documentos       | DocumentsHub.js     | Registro, Tablero (kanban 4 cols)                  |
-| Comunicaciones   | Communications.js   | Bandeja, Transmittals, Reclamaciones, Firmas       |
-| Informes         | ReportsHub.js       | Resumen, Rendimiento, Equipo, Centro de Reportes   |
-| ERP              | ErpHub.js           | Consulta, Tags & Inspecciones                      |
-| Flujos de trabajo| WorkflowsHub.js     | Automatizaciones, Aprobaciones (placeholder)       |
-| Configuración    | Settings.js         | Cuenta, Equipo, Plantillas, Integraciones, Sistema, Actividad, Facturación |
-
-- Agenda → panel lateral desde topbar (icono calendario)
-- Notificaciones → panel lateral desde bell icon "Ver todas"
-- Breadcrumbs multi-nivel: `Sección > Tab` via `onTabChange` callback.
-
-## Convenciones frontend
-
-- **Colores de estado**: Siempre usar exports de `constants/status.js` (STATUS_COLORS, DASHBOARD_COLORS, DOCUSIGN_STATUS_COLORS, etc.). Nunca hardcodear colores de estado.
-- **StatusBadge**: Componente único para badges de estado en toda la app.
-- **HTTP**: Usar `api.get/post` de `services/api.js`. Cero `fetch()` directo.
-- **Fechas**: Usar funciones de `utils/dates.js`. No formatear fechas inline.
-- **Toasts**: `useToast()` de `contexts/ToastContext.js` → `showToast(msg, type, duration)`.
-- **Tema**: CSS vars (`--bg-page`, `--bg-card`, `--border`, `--text-main`). Dark mode via class `dark`.
-- **i18n**: `useI18n()` → `t('key')`. Keys en `translations/index.js`.
-- **Iconos**: Preferir Phosphor (`weight="thin"` para empty states, `weight="bold"` para acciones).
-- **Feature flags**: `useTenant().hasFeature('feature_name')` para condicionar UI.
+### Backend
+- **Router → Service**: Routers solo validan y delegan. Lógica en services
+- **JSON I/O**: `json_store.read_json/write_json` (file locking + escritura atómica). NUNCA abrir JSON manualmente
+- **Auth**: `Depends(get_current_user)` de `auth_middleware.py`. Payload incluye `tenant_id`
+- **API prefix**: `/api/v1/`
+- **Tenant-aware**: Todo servicio que acceda datos DEBE filtrar por `tenant_id`
+- **Jobs**: APScheduler en `main.py` lifespan (backup 2AM, IMAP cada 15min, claims jueves, resumen lunes, PDF día 1)
 
 ### Paleta "Industrial Indigo"
-- **Accent**: Light `#4F46E5`, Dark `#6366F1`
-- **Roles**: Doc Controller `#4F46E5` (indigo), PM `#0D9488` (teal), Comercial `#D97706` (amber)
-- **Font**: Inter (was Outfit)
+- Accent: Light `#4F46E5` · Dark `#6366F1`
+- Roles: Doc Controller `#4F46E5` · PM `#0D9488` · Comercial `#D97706`
+- Dark mode: bg `#0C0D12` · cards `#151721` · sidebar `#0E1019` · borders `#2E3244`
+- Font: Inter
 
-### Colores dark mode
-- Fondo: `#0C0D12`, Cards: `#151721`, Sidebar: `#0E1019`, Borders: `#2E3244`
-- Acentos: indigo `#6366F1`, verde `#16A34A`, amber `#D97706`, rosa `#DB2777`, rojo `#DC2626`
+## Gotchas
 
-## Convenciones backend
+- `data_erp.xlsx` columna `Repsonsable` (typo intencional) = responsable del documento
+- `consulta_erp.xlsx` columna `Responsable` = comercial del pedido (NO es el mismo campo)
+- `Estado == ""` equivale a "sin enviar" → incluido en `ESTADOS_PENDIENTES`
+- PostgreSQL: Documents/Consultas/Tags en JSONB preservan nombres de columna exactos del Excel
 
-- **Router → Service**: Los routers no contienen lógica de negocio, solo validan y delegan a services.
-- **Repository**: Para nuevo código, usar `Depends(get_data_repo)` de `repositories/factory.py`. Para código existente, `instances.py` sigue funcionando (auto-switch por `STORAGE_BACKEND`).
-- **JSON persistido**: Usar `json_store.read_json/write_json` (file locking + escritura atómica). No abrir archivos JSON manualmente.
-- **Auth**: JWT via `auth_middleware.py`. Endpoints protegidos usan `Depends(get_current_user)`. Payload incluye `tenant_id`.
-- **Config**: Constantes y usuarios en `utils/config.py`. Env vars en `.env`.
-- **API prefix**: `/api/v1/`
-- **Tenant-aware services**: Todos los servicios que acceden datos deben filtrar por `tenant_id`.
-- **Scheduled jobs**: APScheduler en `main.py` lifespan (backup diario, polling IMAP cada 15min, reclamaciones jueves, resumen semanal lunes, PDF mensual día 1).
+## Workflow de Claude Code — OBLIGATORIO
 
-## Datos
+### 1. Planificación y subagentes (REQUERIDO antes de implementar)
 
-**Modo Excel** (STORAGE_BACKEND=excel):
-- **data_erp.xlsx**: Datos maestros ERP. Columna `Repsonsable` (typo intencional) = responsable del documento.
-- **consulta_erp.xlsx**: Consultas comerciales. `Responsable` = comercial del pedido (NO es el mismo campo).
-- `Estado == ""` equivale a "sin enviar" → incluido en `ESTADOS_PENDIENTES`.
+IMPORTANTE: Antes de escribir código de implementación, DEBES seguir este proceso:
 
-**Modo PostgreSQL** (STORAGE_BACKEND=postgres):
-- Documents/Consultas/Tags almacenados como JSONB — preserva nombres de columna exactos del Excel.
-- Datos estructurados (users, agenda, claims, etc.) en tablas con columnas tipadas.
+1. **Evaluar**: Usar skill `using-superpowers` para decidir el workflow correcto
+2. **Planificar**: Para tareas multi-step, usar `writing-plans` → crear plan detallado
+3. **Ejecutar con subagentes**: Usar `executing-plans` para ejecutar el plan con checkpoints
+4. **Paralelizar**: Cuando haya 2+ tareas independientes, usar `dispatching-parallel-agents` para lanzar subagentes en paralelo
+5. **Aislar**: Lanzar subagentes con `isolation: "worktree"` para trabajo que necesite aislamiento del workspace principal
 
-## Workflow de Claude Code
+Flujo de decisión:
+- Tarea simple (1 archivo, cambio directo) → implementar directamente
+- Tarea media (2-5 archivos relacionados) → `writing-plans` → implementar
+- Tarea compleja (6+ archivos, múltiples dominios) → `writing-plans` → `dispatching-parallel-agents` con worktrees
+- Feature completa → `using-superpowers` → plan → subagentes paralelos → `verification-before-completion`
 
-- **Planificación**: Usar skill `using-superpowers` para decidir qué workflow aplicar antes de implementar. Para tareas multi-step, usar `writing-plans` para crear el plan y `executing-plans` para ejecutarlo.
-- **Documentación de librerías**: Usar MCP Context7 (`resolve-library-id` → `query-docs`) para consultar docs actualizadas de cualquier librería antes de generar código. No confiar en conocimiento de entrenamiento para APIs específicas.
-- **Verificación**: Siempre usar `verification-before-completion` antes de declarar trabajo terminado.
+### 2. Documentación de librerías — MCP Context7 (REQUERIDO)
+
+NUNCA confiar en conocimiento de entrenamiento para APIs específicas. SIEMPRE usar Context7:
+
+1. `resolve-library-id` con el nombre de la librería y la pregunta
+2. Elegir el mejor match (preferir IDs exactos y version-specific)
+3. `query-docs` con el ID seleccionado y la pregunta
+4. Responder usando los docs obtenidos — incluir ejemplos y citar versión
+
+Aplica para: React, FastAPI, SQLAlchemy, Tailwind, Stripe, Framer Motion, Recharts, Phosphor, y cualquier otra dependencia.
+
+### 3. Verificación (REQUERIDO antes de declarar trabajo terminado)
+
+Usar skill `verification-before-completion` SIEMPRE antes de:
+- Declarar que el trabajo está completo
+- Hacer commit o crear PR
+- Afirmar que tests pasan o bugs están arreglados
+
+Evidencia antes de afirmaciones. Ejecutar comandos de verificación y confirmar output.
 
 ## Idioma
 

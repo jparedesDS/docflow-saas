@@ -20,19 +20,19 @@ def _decode_header_value(value):
     return "".join(result)
 
 
-def _connect(folder="INBOX"):
+def _connect(folder="INBOX", imap_user=None, imap_pass=None):
     conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    conn.login(IMAP_USER, IMAP_PASS)
+    conn.login(imap_user or IMAP_USER, imap_pass or IMAP_PASS)
     conn.select(folder)
     return conn
 
 
-def list_emails(folder: str = "INBOX", filter: str = "all") -> list:
+def list_emails(folder: str = "INBOX", filter: str = "all", imap_user=None, imap_pass=None) -> list:
     """
     Retorna lista de emails con flags is_read.
     filter: 'all' | 'unread'
     """
-    conn = _connect(folder)
+    conn = _connect(folder, imap_user, imap_pass)
     try:
         search_criterion = "ALL" if filter == "all" else "UNSEEN"
         _, data = conn.search(None, search_criterion)
@@ -85,11 +85,11 @@ def list_emails(folder: str = "INBOX", filter: str = "all") -> list:
         conn.logout()
 
 
-def get_email_detail(uid: str, folder: str = "INBOX") -> dict:
+def get_email_detail(uid: str, folder: str = "INBOX", imap_user=None, imap_pass=None) -> dict:
     """
     Retorna detalle completo de un email: headers + cuerpo HTML + plain.
     """
-    msg = imap_service.fetch_email(uid, folder)
+    msg = imap_service.fetch_email(uid, folder, imap_user, imap_pass)
 
     subject = _decode_header_value(msg.get("Subject", ""))
     sender = _decode_header_value(msg.get("From", ""))
@@ -117,7 +117,7 @@ def get_email_detail(uid: str, folder: str = "INBOX") -> dict:
     }
 
 
-def mark_read(uid: str, folder: str = "INBOX") -> dict:
+def mark_read(uid: str, folder: str = "INBOX", imap_user=None, imap_pass=None) -> dict:
     """Marca un email como leído."""
-    imap_service.mark_as_read(uid, folder)
+    imap_service.mark_as_read(uid, folder, imap_user, imap_pass)
     return {"ok": True, "uid": uid}

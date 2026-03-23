@@ -4,8 +4,8 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
 import {
-  Briefcase, FolderOpen, EnvelopeSimple, Database,
-  CheckCircle as HealthCheck, XCircle, ArrowClockwise,
+  Briefcase, FolderOpen, Toolbox, Database,
+  CheckCircle as HealthCheck, XCircle, ArrowClockwise, Warning,
 } from "@phosphor-icons/react";
 import api from "../services/api";
 import KpiCard from "../components/ui/KpiCard";
@@ -25,6 +25,7 @@ export default function Dashboard({ onNavigate }) {
   const [monitoring, setMonitoring] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [notifications, setNotifications] = useState(null);
+  const [atRisk, setAtRisk] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,10 +33,12 @@ export default function Dashboard({ onNavigate }) {
       api.get("/reports/monitoring-report"),
       api.get("/analytics/summary"),
       api.get("/notifications/?limit=6"),
-    ]).then(([monRes, anaRes, notRes]) => {
+      api.get("/predictions/at-risk?limit=5"),
+    ]).then(([monRes, anaRes, notRes, riskRes]) => {
       if (monRes.status === "fulfilled") setMonitoring(monRes.value.data);
       if (anaRes.status === "fulfilled") setAnalytics(anaRes.value.data);
       if (notRes.status === "fulfilled") setNotifications(notRes.value.data);
+      if (riskRes.status === "fulfilled") setAtRisk(riskRes.value.data || []);
       setLoading(false);
     });
   }, []);
@@ -267,6 +270,54 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </div>
 
+      {/* Row 4b: At-risk documents */}
+      {atRisk.length > 0 && (
+        <div className="card p-5">
+          <SectionTitle icon={Warning} color="#DC2626">{t("dashAtRisk")}</SectionTitle>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {atRisk.map((doc, i) => {
+              const scoreColor = doc.risk_score >= 60 ? "#DC2626" : doc.risk_score >= 30 ? "#D97706" : "#16A34A";
+              return (
+                <motion.div
+                  key={doc.doc_eipsa || i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    padding: "10px 0",
+                    borderBottom: i < atRisk.length - 1 ? "1px solid var(--border)" : "none",
+                  }}
+                >
+                  {/* Risk score badge */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                    background: `${scoreColor}14`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 13, fontWeight: 800, color: scoreColor,
+                  }}>
+                    {doc.risk_score}
+                  </div>
+                  {/* Doc info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p className="text-text-main" style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {doc.doc_eipsa} — {doc.titulo || doc.cliente}
+                    </p>
+                    <p className="text-text-muted" style={{ fontSize: 11, marginTop: 1 }}>
+                      {doc.reasons[0]}
+                    </p>
+                  </div>
+                  {/* Status */}
+                  <span className="text-text-muted" style={{ fontSize: 10, flexShrink: 0, fontWeight: 600 }}>
+                    {doc.estado || t("sin_enviar")}
+                  </span>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Row 5: Quick access + System health */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         {/* Quick access — clickable */}
@@ -276,7 +327,7 @@ export default function Dashboard({ onNavigate }) {
             {[
               { icon: Briefcase, label: t("dashProjects"), desc: t("dashProjectsDesc"), color: "#4F46E5", section: "proyectos" },
               { icon: FolderOpen, label: t("dashDocuments"), desc: t("dashDocsDesc"), color: "#0D9488", section: "documentos" },
-              { icon: EnvelopeSimple, label: t("dashComms"), desc: t("dashCommsDesc"), color: "#D97706", section: "comunicaciones" },
+              { icon: Toolbox, label: t("navHerramientas"), desc: t("toolsHubDesc"), color: "#D97706", section: "herramientas" },
               { icon: Database, label: t("dashErp"), desc: t("dashErpDesc"), color: "#2563EB", section: "erp" },
             ].map(item => (
               <button

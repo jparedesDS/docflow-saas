@@ -86,7 +86,7 @@ const REPORTS = [
   },
 ];
 
-export default function ReportCenter() {
+export default function ReportCenter({ mode = "full" }) {
   const { t } = useI18n();
   const { showToast } = useToast();
   const [loadingId, setLoadingId] = useState(null);
@@ -133,7 +133,10 @@ export default function ReportCenter() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-        {REPORTS.map(report => {
+        {(mode === "limited"
+          ? REPORTS.filter(r => ["export-excel", "monitoring-excel", "custom"].includes(r.id))
+          : REPORTS
+        ).map(report => {
           const Icon = report.icon;
           const isLoading = loadingId === report.id;
           return (

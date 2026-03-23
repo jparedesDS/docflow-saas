@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from services.auth_service import hash_password
+from utils.encryption import encrypt_value, decrypt_value
 
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "excel")
 
@@ -201,6 +202,54 @@ def create_invitation(tenant_id: int, email: str, role: str, invited_by: int = N
         session.close()
 
 
+def list_pending_invitations(tenant_id: int) -> list:
+    """List all pending (not accepted, not expired) invitations for a tenant."""
+    from db.models import Invitation
+    session = _get_session()
+    try:
+        invitations = session.query(Invitation).filter(
+            Invitation.tenant_id == tenant_id,
+            Invitation.accepted_at == None,
+            Invitation.expires_at > datetime.now(timezone.utc),
+        ).order_by(Invitation.created_at.desc()).all()
+        return [
+            {
+                "id": inv.id,
+                "email": inv.email,
+                "role": inv.role,
+                "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+            }
+            for inv in invitations
+        ]
+    finally:
+        session.close()
+
+
+def cancel_invitation(tenant_id: int, invitation_id: int):
+    """Cancel (delete) a pending invitation."""
+    from db.models import Invitation
+    session = _get_session()
+    try:
+        invitation = session.query(Invitation).filter(
+            Invitation.id == invitation_id,
+            Invitation.tenant_id == tenant_id,
+        ).first()
+        if not invitation:
+            raise ValueError("Invitation not found")
+        if invitation.accepted_at is not None:
+            raise ValueError("Invitation already accepted")
+        session.delete(invitation)
+        session.commit()
+    except ValueError:
+        raise
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def accept_invitation(token: str, name: str, password: str) -> dict:
     """Accept an invitation and create the user account."""
     from db.models import Invitation, User
@@ -278,6 +327,8 @@ def get_tenant_setting(tenant_id: int, key: str, default: str = "") -> str:
         ).first()
         if not setting:
             return os.getenv(key, default)
+        if setting.encrypted:
+            return decrypt_value(setting.value)
         return setting.value
     finally:
         session.close()
@@ -287,18 +338,19 @@ def set_tenant_setting(tenant_id: int, key: str, value: str, encrypted: bool = F
     from db.models import TenantSetting
     session = _get_session()
     try:
+        stored_value = encrypt_value(value) if encrypted else value
         setting = session.query(TenantSetting).filter(
             TenantSetting.tenant_id == tenant_id,
             TenantSetting.key == key,
         ).first()
         if setting:
-            setting.value = value
+            setting.value = stored_value
             setting.encrypted = encrypted
         else:
             setting = TenantSetting(
                 tenant_id=tenant_id,
                 key=key,
-                value=value,
+                value=stored_value,
                 encrypted=encrypted,
             )
             session.add(setting)

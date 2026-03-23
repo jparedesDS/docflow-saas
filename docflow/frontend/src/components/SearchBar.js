@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MagnifyingGlass, House, Briefcase, FolderOpen, EnvelopeSimple,
-  ChartBar, Database, Lightning, Gear, Moon, Sun, Translate, HardDrives,
+  MagnifyingGlass, House, Briefcase, FolderOpen,
+  ChartBar, Database, Lightning, Gear, Moon, Sun, Translate, HardDrives, Toolbox,
+  CalendarBlank, PaperPlaneTilt, Tray, Megaphone, PenNib, ShieldCheck,
 } from "@phosphor-icons/react";
 import api from "../services/api";
 import { getStatusColor } from "../constants/status";
@@ -29,15 +30,19 @@ export default function SearchBar({ onNavigate }) {
     { label: t('navDocumentos'), section: "documentos", icon: FolderOpen },
     { label: `${t('navDocumentos')} > ${t('tabRegistro')}`, section: "documentos", icon: FolderOpen },
     { label: `${t('navDocumentos')} > ${t('tabTablero')}`, section: "documentos", icon: FolderOpen },
-    { label: t('navComunicaciones'), section: "comunicaciones", icon: EnvelopeSimple },
-    { label: `${t('navComunicaciones')} > ${t('tabBandeja')}`, section: "comunicaciones", icon: EnvelopeSimple },
-    { label: `${t('navComunicaciones')} > ${t('tabReclamaciones')}`, section: "comunicaciones", icon: EnvelopeSimple },
-    { label: `${t('navComunicaciones')} > ${t('tabFirmas')}`, section: "comunicaciones", icon: EnvelopeSimple },
     { label: t('navInformes'), section: "informes", icon: ChartBar },
     { label: `${t('navInformes')} > ${t('tabRendimiento')}`, section: "informes", icon: ChartBar },
     { label: `${t('navInformes')} > ${t('tabReportCenter')}`, section: "informes", icon: ChartBar },
     { label: t('navErp'), section: "erp", icon: Database },
     { label: t('navFlujos'), section: "flujos", icon: Lightning },
+    { label: t('navHerramientas'), section: "herramientas", icon: Toolbox },
+    { label: `${t('navHerramientas')} > ${t('toolAgenda')}`, section: "herramientas", tool: "agenda", icon: CalendarBlank },
+    { label: `${t('navHerramientas')} > ${t('toolDevolutions')}`, section: "herramientas", tool: "devolutions", icon: PaperPlaneTilt },
+    { label: `${t('navHerramientas')} > ${t('toolInboxAI')}`, section: "herramientas", tool: "inbox-ai", icon: Tray },
+    { label: `${t('navHerramientas')} > ${t('toolClaims')}`, section: "herramientas", tool: "claims", icon: Megaphone },
+    { label: `${t('navHerramientas')} > ${t('toolDocuSign')}`, section: "herramientas", tool: "docusign", icon: PenNib },
+    { label: `${t('navHerramientas')} > ${t('toolReportCenter')}`, section: "herramientas", tool: "report-center", icon: ChartBar },
+    { label: `${t('navHerramientas')} > ${t('toolAdmin')}`, section: "herramientas", tool: "admin", icon: ShieldCheck },
     { label: t('navConfiguracion'), section: "configuracion", icon: Gear },
     { label: `${t('navConfiguracion')} > ${t('tabEquipo')}`, section: "configuracion", icon: Gear },
     { label: `${t('navConfiguracion')} > ${t('settingsTemplates')}`, section: "configuracion", icon: Gear },
@@ -126,7 +131,7 @@ export default function SearchBar({ onNavigate }) {
     if (item.action) {
       item.action();
     } else if (item.section && onNavigate) {
-      onNavigate({ _navSection: item.section });
+      onNavigate({ _navSection: item.section, _tool: item.tool || null });
     }
   };
 

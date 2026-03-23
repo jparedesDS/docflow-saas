@@ -132,3 +132,69 @@ def natural_search(body: SearchQuery):
         "count": len(results),
         "results": results[:200],  # Limit response size
     }
+
+
+@router.get("/faceted")
+def faceted_search(
+    q: str | None = None,
+    estado: str | None = None,
+    cliente: str | None = None,
+    tipo: str | None = None,
+    responsable: str | None = None,
+    critico: str | None = None,
+    limit: int = 200,
+):
+    """Faceted search with counts per facet value."""
+    service = MonitoringService(data_repo, consulta_repo)
+    all_data = service.get_monitoring_data()
+
+    # Apply active filters
+    filtered = all_data
+    if q:
+        q_lower = q.lower()
+        filtered = [
+            r for r in filtered
+            if q_lower in str(r.get("Título", "")).lower()
+            or q_lower in str(r.get("Nº Doc. EIPSA", "")).lower()
+            or q_lower in str(r.get("Nº Doc. Cliente", "")).lower()
+        ]
+    if estado:
+        estados = [s.strip() for s in estado.split(",")]
+        filtered = [r for r in filtered if r.get("Estado", "") in estados]
+    if cliente:
+        clientes = [c.strip().lower() for c in cliente.split(",")]
+        filtered = [r for r in filtered if str(r.get("Cliente", "")).lower() in clientes]
+    if tipo:
+        tipos = [t.strip().lower() for t in tipo.split(",")]
+        filtered = [r for r in filtered if str(r.get("Tipo Doc.", "")).lower() in tipos]
+    if responsable:
+        resps = [rr.strip() for rr in responsable.split(",")]
+        filtered = [r for r in filtered if r.get("Repsonsable", "") in resps]
+    if critico:
+        filtered = [r for r in filtered if str(r.get("Crítico", "")).lower() == critico.lower()]
+
+    # Compute facets from filtered data
+    facets = {
+        "Estado": {},
+        "Cliente": {},
+        "Tipo Doc.": {},
+        "Repsonsable": {},
+        "Crítico": {},
+    }
+    for row in filtered:
+        for facet_key in facets:
+            val = str(row.get(facet_key, "")).strip()
+            if not val:
+                val = "(vacío)" if facet_key == "Estado" else ""
+            if val:
+                facets[facet_key][val] = facets[facet_key].get(val, 0) + 1
+
+    # Sort facet values by count descending
+    for key in facets:
+        facets[key] = dict(sorted(facets[key].items(), key=lambda x: -x[1]))
+
+    return {
+        "count": len(filtered),
+        "facets": facets,
+        "results": filtered[:limit],
+    }

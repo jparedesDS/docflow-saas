@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Sun, Moon, List as ListIcon, X,
   SignOut, Bell, Gear, CaretDown,
-  House, Briefcase, FolderOpen, EnvelopeSimple,
-  ChartBar, Database, Lightning, CalendarBlank,
+  House, Briefcase, FolderOpen,
+  ChartBar, Database, Lightning, CalendarBlank, Toolbox,
 } from "@phosphor-icons/react";
 import api from "./services/api";
 import LoginScreen, { ROLES } from "./components/LoginScreen";
@@ -15,12 +15,12 @@ import { useTheme } from "./contexts/ThemeContext";
 import { useI18n } from "./contexts/I18nContext";
 import { useTenant } from "./contexts/TenantContext";
 import { timeAgo } from "./utils/dates";
+import { TOOLS_CONFIG } from "./constants/tools";
 
 /* ── Lazy-loaded pages ───────────────────────────────── */
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProjectsHub = lazy(() => import("./pages/ProjectsHub"));
 const DocumentsHub = lazy(() => import("./pages/DocumentsHub"));
-const Communications = lazy(() => import("./pages/Communications"));
 const ReportsHub = lazy(() => import("./pages/ReportsHub"));
 const ErpHub = lazy(() => import("./pages/ErpHub"));
 const WorkflowsHub = lazy(() => import("./pages/WorkflowsHub"));
@@ -29,6 +29,8 @@ const Agenda = lazy(() => import("./pages/Agenda"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const Register = lazy(() => import("./pages/Register"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const ToolsHub = lazy(() => import("./pages/ToolsHub"));
+const ClientPortal = lazy(() => import("./pages/ClientPortal"));
 
 /* ── Sidebar navigation items ─────────────────────────────── */
 
@@ -36,17 +38,17 @@ const NAV_ITEMS = [
   { key: "inicio",           icon: House,          labelKey: "navInicio" },
   { key: "proyectos",        icon: Briefcase,      labelKey: "navProyectos" },
   { key: "documentos",       icon: FolderOpen,     labelKey: "navDocumentos" },
-  { key: "comunicaciones",   icon: EnvelopeSimple, labelKey: "navComunicaciones" },
   { key: "informes",         icon: ChartBar,       labelKey: "navInformes" },
   { key: "erp",              icon: Database,        labelKey: "navErp" },
   { key: "flujos",           icon: Lightning,       labelKey: "navFlujos" },
+  { key: "herramientas",     icon: Toolbox,         labelKey: "navHerramientas" },
 ];
 
 const SETTINGS_ITEM = { key: "configuracion", icon: Gear, labelKey: "navConfiguracion" };
 
 /* ── Sidebar item component ───────────────────────────────── */
 
-function SidebarItem({ item, active, open, onClick, t, badge }) {
+function SidebarItem({ item, active, open, onClick, t, badge, suffix }) {
   const Icon = item.icon;
   return (
     <button
@@ -75,6 +77,7 @@ function SidebarItem({ item, active, open, onClick, t, badge }) {
         <Icon size={18} weight={active ? "fill" : "regular"} />
       </span>
       {open && <span className="truncate">{t(item.labelKey)}</span>}
+      {suffix}
       {badge > 0 && (
         <span style={{
           marginLeft: "auto", flexShrink: 0,
@@ -87,6 +90,57 @@ function SidebarItem({ item, active, open, onClick, t, badge }) {
         </span>
       )}
     </button>
+  );
+}
+
+/* ── Sidebar Tool Submenu ─────────────────────────────────── */
+
+function SidebarToolSubmenu({ tools, activeTool, open, onToolClick, t }) {
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ height: 0, opacity: 0 }}
+        animate={{ height: "auto", opacity: 1 }}
+        exit={{ height: 0, opacity: 0 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        style={{ overflow: "hidden" }}
+      >
+        <div style={{ paddingTop: 2, paddingBottom: 4 }}>
+          {tools.map((tool) => {
+            const Icon = tool.icon;
+            const isActive = activeTool === tool.key;
+            return (
+              <button
+                key={tool.key}
+                onClick={() => onToolClick(tool.key)}
+                title={!open ? t(tool.labelKey) : undefined}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  border: "none",
+                  cursor: "pointer",
+                  borderRadius: 6,
+                  padding: open ? "5px 8px 5px 28px" : "5px 0",
+                  justifyContent: open ? "flex-start" : "center",
+                  backgroundColor: isActive ? "rgba(99,102,241,0.09)" : "transparent",
+                  color: isActive ? "#F1F5F9" : "#94A3B8",
+                  fontWeight: isActive ? 600 : 400,
+                  fontSize: 12,
+                  transition: "background-color 0.15s, color 0.15s",
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = "#1A1C28"; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = isActive ? "rgba(99,102,241,0.09)" : "transparent"; }}
+              >
+                <Icon size={14} weight={isActive ? "fill" : "regular"} style={{ color: tool.color, flexShrink: 0 }} />
+                {open && <span className="truncate">{t(tool.labelKey)}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -282,7 +336,9 @@ function AgendaPanel({ onClose }) {
           </button>
         </div>
         <div style={{ padding: 20 }}>
-          <Agenda />
+          <Suspense fallback={<LoadingSpinner />}>
+            <Agenda compact />
+          </Suspense>
         </div>
       </motion.div>
     </>
@@ -319,7 +375,9 @@ function NotificationsPanel({ onClose }) {
           </button>
         </div>
         <div style={{ padding: 20 }}>
-          <Notifications />
+          <Suspense fallback={<LoadingSpinner />}>
+            <Notifications />
+          </Suspense>
         </div>
       </motion.div>
     </>
@@ -333,6 +391,8 @@ export default function App() {
   const { lang, toggleLang, t } = useI18n();
   const [activeSection, setActiveSection] = useState("inicio");
   const [activeSubTab, setActiveSubTab] = useState(null);
+  const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [activeTool, setActiveTool] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user] = useState(() => {
     const saved = localStorage.getItem("docflow_user");
@@ -371,11 +431,20 @@ export default function App() {
     }
   };
 
-  // Reset sub-tab when section changes
-  useEffect(() => { setActiveSubTab(null); }, [activeSection]);
+  // Reset sub-tab and tools when section changes
+  useEffect(() => {
+    setActiveSubTab(null);
+    if (activeSection !== "herramientas") {
+      setToolsExpanded(false);
+      setActiveTool(null);
+    }
+  }, [activeSection]);
 
   /* ── Keyboard shortcuts: Alt+1..7, Alt+S ── */
-  const handleNavigate = useCallback((section) => setActiveSection(section), []);
+  const handleNavigate = useCallback((section) => {
+    setActiveSection(section);
+    if (section === "herramientas") setToolsExpanded(true);
+  }, []);
 
   useEffect(() => {
     const handler = (e) => {
@@ -383,7 +452,7 @@ export default function App() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
 
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        const keyMap = { "1": "inicio", "2": "proyectos", "3": "documentos", "4": "comunicaciones", "5": "informes", "6": "erp", "7": "flujos" };
+        const keyMap = { "1": "inicio", "2": "proyectos", "3": "documentos", "4": "informes", "5": "erp", "6": "flujos", "7": "herramientas" };
         if (keyMap[e.key]) {
           e.preventDefault();
           handleNavigate(keyMap[e.key]);
@@ -399,6 +468,16 @@ export default function App() {
   }, [handleNavigate]);
 
   const [showRegister, setShowRegister] = useState(false);
+
+  // Client portal: check for ?portal_token= in URL
+  const portalToken = new URLSearchParams(window.location.search).get("portal_token");
+  if (portalToken) {
+    return (
+      <Suspense fallback={<LoadingSpinner />}>
+        <ClientPortal portalToken={portalToken} />
+      </Suspense>
+    );
+  }
 
   if (!user) {
     if (showRegister) {
@@ -418,9 +497,18 @@ export default function App() {
     || (activeSection === "configuracion" ? SETTINGS_ITEM : null);
   const sectionLabel = activeNavItem ? t(activeNavItem.labelKey) : "DocFlow";
 
-  const breadcrumbItems = activeSubTab
-    ? [{ label: sectionLabel, onClick: () => setActiveSubTab(null) }, { label: activeSubTab }]
-    : [{ label: sectionLabel }];
+  const breadcrumbItems = (() => {
+    if (activeSection === "herramientas" && activeTool) {
+      const tool = TOOLS_CONFIG.find(tc => tc.key === activeTool);
+      return [
+        { label: sectionLabel, onClick: () => setActiveTool(null) },
+        { label: tool ? t(tool.labelKey) : activeTool },
+      ];
+    }
+    return activeSubTab
+      ? [{ label: sectionLabel, onClick: () => setActiveSubTab(null) }, { label: activeSubTab }]
+      : [{ label: sectionLabel }];
+  })();
 
   return (
     <div className="min-h-[100dvh] flex text-text-main" style={{ background: "var(--bg-page)" }}>
@@ -453,15 +541,39 @@ export default function App() {
         {/* Nav items */}
         <nav className="flex-1 py-3 px-2 overflow-y-auto space-y-1" aria-label="Main navigation">
           {NAV_ITEMS.map(item => (
-            <SidebarItem
-              key={item.key}
-              item={item}
-              active={activeSection === item.key}
-              open={sidebarOpen}
-              onClick={() => setActiveSection(item.key)}
-              t={t}
-              badge={item.key === "comunicaciones" ? unreadCount : 0}
-            />
+            <React.Fragment key={item.key}>
+              <SidebarItem
+                item={item}
+                active={activeSection === item.key}
+                open={sidebarOpen}
+                onClick={() => {
+                  if (item.key === "herramientas") {
+                    handleNavigate("herramientas");
+                    if (activeSection === "herramientas") setToolsExpanded(prev => !prev);
+                  } else {
+                    setActiveSection(item.key);
+                  }
+                }}
+                t={t}
+                badge={0}
+                suffix={item.key === "herramientas" && sidebarOpen ? (
+                  <CaretDown size={10} style={{
+                    marginLeft: "auto", color: "#64748B",
+                    transform: toolsExpanded && activeSection === "herramientas" ? "rotate(0deg)" : "rotate(-90deg)",
+                    transition: "transform 0.2s ease",
+                  }} />
+                ) : null}
+              />
+              {item.key === "herramientas" && activeSection === "herramientas" && toolsExpanded && (
+                <SidebarToolSubmenu
+                  tools={TOOLS_CONFIG.filter(tc => !tc.roles || tc.roles.includes(user?.role))}
+                  activeTool={activeTool}
+                  open={sidebarOpen}
+                  onToolClick={(key) => { setActiveSection("herramientas"); setActiveTool(key); }}
+                  t={t}
+                />
+              )}
+            </React.Fragment>
           ))}
         </nav>
 
@@ -515,8 +627,10 @@ export default function App() {
             <div className="hidden md:block" style={{ width: 400 }}>
               <SearchBar
                 onNavigate={(item) => {
-                  if (item._navSection) setActiveSection(item._navSection);
-                  else if (item["Nº Pedido"]) setActiveSection("documentos");
+                  if (item._navSection) {
+                    setActiveSection(item._navSection);
+                    if (item._tool) { setActiveTool(item._tool); setToolsExpanded(true); }
+                  } else if (item["Nº Pedido"]) setActiveSection("documentos");
                 }}
               />
             </div>
@@ -620,12 +734,12 @@ export default function App() {
           <div style={{ maxWidth: 1400, margin: "0 auto" }}>
             <Suspense fallback={<LoadingSpinner />}>
               {activeSection === "inicio" && <Dashboard onNavigate={setActiveSection} />}
-              {activeSection === "proyectos" && <ProjectsHub canExport={user.role === "Document Controller"} onTabChange={setActiveSubTab} />}
-              {activeSection === "documentos" && <DocumentsHub canExport={user.role === "Document Controller"} onTabChange={setActiveSubTab} />}
-              {activeSection === "comunicaciones" && <Communications onTabChange={setActiveSubTab} />}
+              {activeSection === "proyectos" && <ProjectsHub canExport={user.role === "Document Controller" || user.role === "admin"} onTabChange={setActiveSubTab} />}
+              {activeSection === "documentos" && <DocumentsHub canExport={user.role === "Document Controller" || user.role === "admin"} onTabChange={setActiveSubTab} />}
               {activeSection === "informes" && <ReportsHub onTabChange={setActiveSubTab} />}
               {activeSection === "erp" && <ErpHub onTabChange={setActiveSubTab} />}
               {activeSection === "flujos" && <WorkflowsHub onTabChange={setActiveSubTab} />}
+              {activeSection === "herramientas" && <ToolsHub onTabChange={setActiveSubTab} activeTool={activeTool} onToolSelect={setActiveTool} user={user} />}
               {activeSection === "configuracion" && <Settings user={user} onTabChange={setActiveSubTab} />}
               {activeSection === "admin" && <AdminDashboard />}
             </Suspense>

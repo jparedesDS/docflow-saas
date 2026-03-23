@@ -130,7 +130,7 @@ function NotaModal({ nota, onClose, onSaved }) {
   );
 }
 
-function TabNotas() {
+function TabNotas({ compact }) {
   const [notas, setNotas] = useState([]);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
@@ -163,7 +163,7 @@ function TabNotas() {
       {filtered.length === 0 ? (
         <div className="text-center text-text-muted" style={{ padding: 60 }}>Sin notas. Crea la primera.</div>
       ) : (
-        <motion.div layout style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+        <motion.div layout style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
           <AnimatePresence>
             {filtered.map(nota => (
               <NotaCard key={nota.id} nota={nota} onEdit={setModal} onDelete={handleDelete} />
@@ -464,7 +464,7 @@ function TareaModal({ tarea, onClose, onSaved, owner }) {
   );
 }
 
-function TabTareas({ owner, t }) {
+function TabTareas({ owner, t, compact }) {
   const [tareas, setTareas] = useState([]);
   const [modal, setModal] = useState(null);
   const [filtroPrioridad, setFiltroPrioridad] = useState("todas");
@@ -519,7 +519,7 @@ function TabTareas({ owner, t }) {
       </div>
 
       {/* Columnas */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(3, 1fr)", gap: 16 }}>
         {ESTADO_COLS.map(col => {
           const colTareas = filtered.filter(tr => tr.estado === col);
           const colColors = { pendiente: "#6B7280", en_progreso: "#D97706", completada: "#16A34A" };
@@ -568,7 +568,7 @@ function getTabs(t) {
   ];
 }
 
-export default function Agenda() {
+export default function Agenda({ compact = false }) {
   const { t } = useI18n();
   const [tab, setTab] = useState("tareas");
   const user = (() => {
@@ -577,7 +577,7 @@ export default function Agenda() {
 
   return (
     <div>
-      <PageHeader title={t("agenda") || "Agenda"} subtitle="Notas, reuniones y tareas del equipo" />
+      {!compact && <PageHeader title={t("agenda") || "Agenda"} subtitle="Notas, reuniones y tareas del equipo" />}
 
       {/* Sub-tabs */}
       <div className="flex gap-1 mb-6 border-b border-border">
@@ -604,9 +604,9 @@ export default function Agenda() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.18 }}
         >
-          {tab === "notas" && <TabNotas />}
+          {tab === "notas" && <TabNotas compact={compact} />}
           {tab === "reuniones" && <TabReuniones owner={user.initials} t={t} />}
-          {tab === "tareas" && <TabTareas owner={user.initials} t={t} />}
+          {tab === "tareas" && <TabTareas owner={user.initials} t={t} compact={compact} />}
         </motion.div>
       </AnimatePresence>
     </div>

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from utils.auth_middleware import get_current_user
 from services.monitoring_service import MonitoringService
 from services.analytics_service import AnalyticsService
 from repositories.instances import data_repo, consulta_repo
@@ -161,3 +162,10 @@ def project_documents(pedido: str):
     all_docs = svc.get_monitoring_data()
     docs = _filter_by_pedido(all_docs, pedido)
     return docs
+
+
+@router.get("/{pedido:path}/traceability")
+def project_traceability(pedido: str, user=Depends(get_current_user)):
+    """Traceability matrix: materials × document types with coverage."""
+    from services.traceability_service import get_matrix
+    return get_matrix(user["tenant_id"], pedido)

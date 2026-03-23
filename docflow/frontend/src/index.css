@@ -142,3 +142,153 @@ thead.sticky th { box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .dark ::-webkit-scrollbar-thumb { background: #3F3F46; }
 .dark ::-webkit-scrollbar-thumb:hover { background: #71717A; }
+
+/* ── Login background layers ────────────────────── */
+.login-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+
+.login-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 25% 20%, rgba(79,70,229,0.06), transparent),
+    radial-gradient(ellipse 500px 350px at 75% 80%, rgba(13,148,136,0.04), transparent);
+}
+
+.dark .login-bg::before {
+  background:
+    radial-gradient(ellipse 600px 400px at 25% 20%, rgba(99,102,241,0.08), transparent),
+    radial-gradient(ellipse 500px 350px at 75% 80%, rgba(13,148,136,0.06), transparent);
+}
+
+.login-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(79,70,229,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,70,229,0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.dark .login-bg::after {
+  background-image:
+    linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+}
+
+.login-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, var(--bg-page) 100%);
+  pointer-events: none;
+}
+
+/* ── Login card glassmorphism ────────────────────── */
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+
+.dark .login-card {
+  background: rgba(21, 23, 33, 0.8);
+  border-color: rgba(46, 50, 68, 0.6);
+  backdrop-filter: blur(8px);
+}
+
+/* ── User card spotlight ─────────────────────────── */
+.user-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.user-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+  background: radial-gradient(200px circle at var(--x, 50%) var(--y, 50%),
+    rgba(99,102,241,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.user-card:hover::before {
+  opacity: 1;
+}
+
+/* ── Password input with icon ────────────────────── */
+.login-input-wrapper {
+  position: relative;
+}
+
+.login-input-wrapper .login-input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.login-input-wrapper .login-input-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.login-input-wrapper .login-input-toggle:hover {
+  color: var(--text-sub);
+}
+
+.login-input-wrapper input {
+  padding-left: 40px !important;
+}
+
+.login-input-wrapper.has-toggle input {
+  padding-right: 40px !important;
+}
+
+/* ── Shake animation ─────────────────────────────── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-6px); }
+  30% { transform: translateX(6px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(2px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Login grid responsive ───────────────────────── */
+.login-user-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .login-user-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

@@ -130,3 +130,31 @@ async def accept_invite(body: AcceptInviteRequest):
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/invitations")
+async def list_invitations(current_user: dict = Depends(get_current_user)):
+    """List pending invitations for the current tenant."""
+    if current_user.get("role") not in ("admin", "Document Controller"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from services.tenant_service import list_pending_invitations
+
+    tenant_id = current_user.get("tenant_id", 1)
+    return list_pending_invitations(tenant_id)
+
+
+@router.delete("/invitations/{invitation_id}")
+async def cancel_invite(invitation_id: int, current_user: dict = Depends(get_current_user)):
+    """Cancel a pending invitation."""
+    if current_user.get("role") not in ("admin", "Document Controller"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from services.tenant_service import cancel_invitation
+
+    tenant_id = current_user.get("tenant_id", 1)
+    try:
+        cancel_invitation(tenant_id, invitation_id)
+        return {"detail": "Invitation cancelled"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

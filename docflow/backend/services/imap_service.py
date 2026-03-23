@@ -10,6 +10,12 @@ from utils.config import IMAP_HOST, IMAP_PORT, IMAP_USER, IMAP_PASS
 logger = logging.getLogger(__name__)
 
 
+def _safe_to_str(data) -> str:
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return str(data) if data is not None else ""
+
+
 def _decompress_rtf(data: bytes, logger) -> str:
     """
     Descomprime RTF en formato LZFU (Microsoft Outlook).
@@ -100,7 +106,7 @@ def _extract_html_from_outlook_rtf(rtf_str: str, logger) -> str | None:
         html = ''.join(result)
         if '<table' in html.lower() or '<tr' in html.lower():
             logger.info(f"RTF→HTML full: len={len(html)}")
-            print(f"[RTF→HTML] primeros 600 chars: {html[:600]}", flush=True)
+            logger.debug("RTF→HTML primeros 600 chars: %s", html[:600])
             return html
         logger.info("RTF→HTML: sin tabla en resultado")
         return html if html.strip() else None
@@ -129,15 +135,15 @@ def _decode_header_value(value):
     return "".join(result)
 
 
-def _connect(folder="INBOX"):
+def _connect(folder="INBOX", imap_user=None, imap_pass=None):
     conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    conn.login(IMAP_USER, IMAP_PASS)
+    conn.login(imap_user or IMAP_USER, imap_pass or IMAP_PASS)
     conn.select(folder)
     return conn
 
 
-def list_all(folder="INBOX"):
-    conn = _connect(folder)
+def list_all(folder="INBOX", imap_user=None, imap_pass=None):
+    conn = _connect(folder, imap_user, imap_pass)
     try:
         _, data = conn.search(None, "ALL")
         uids = data[0].split() if data[0] else []
@@ -166,8 +172,8 @@ def list_all(folder="INBOX"):
         conn.logout()
 
 
-def list_unread(folder="INBOX"):
-    conn = _connect(folder)
+def list_unread(folder="INBOX", imap_user=None, imap_pass=None):
+    conn = _connect(folder, imap_user, imap_pass)
     try:
         _, data = conn.search(None, "UNSEEN")
         uids = data[0].split() if data[0] else []
@@ -196,8 +202,8 @@ def list_unread(folder="INBOX"):
         conn.logout()
 
 
-def fetch_email(uid, folder="INBOX"):
-    conn = _connect(folder)
+def fetch_email(uid, folder="INBOX", imap_user=None, imap_pass=None):
+    conn = _connect(folder, imap_user, imap_pass)
     try:
         _, msg_data = conn.fetch(uid.encode() if isinstance(uid, str) else uid, "(BODY.PEEK[])")
         raw = msg_data[0][1]
@@ -207,9 +213,9 @@ def fetch_email(uid, folder="INBOX"):
         conn.logout()
 
 
-def fetch_raw(uid, folder="INBOX") -> bytes:
+def fetch_raw(uid, folder="INBOX", imap_user=None, imap_pass=None) -> bytes:
     """Devuelve el email completo como bytes (para adjuntar como .eml)."""
-    conn = _connect(folder)
+    conn = _connect(folder, imap_user, imap_pass)
     try:
         _, msg_data = conn.fetch(uid.encode() if isinstance(uid, str) else uid, "(BODY.PEEK[])")
         return msg_data[0][1]
@@ -218,8 +224,8 @@ def fetch_raw(uid, folder="INBOX") -> bytes:
         conn.logout()
 
 
-def mark_as_read(uid, folder="INBOX"):
-    conn = _connect(folder)
+def mark_as_read(uid, folder="INBOX", imap_user=None, imap_pass=None):
+    conn = _connect(folder, imap_user, imap_pass)
     try:
         conn.store(uid.encode() if isinstance(uid, str) else uid, "+FLAGS", "\\Seen")
     finally:
@@ -271,10 +277,10 @@ def _text_table_to_html(text: str) -> str | None:
     headers = [h.strip() for h in raw_headers if h.strip()]
 
     if len(headers) < 3:
-        print(f"[TEXT→HTML] headers insuficientes: {headers}", flush=True)
+        logger.debug("TEXT→HTML headers insuficientes: %s", headers)
         return None
 
-    print(f"[TEXT→HTML] encontrado en línea {header_idx}, headers={headers}, sep={repr(sep)}", flush=True)
+    logger.debug("TEXT→HTML encontrado en línea %d, headers=%s, sep=%r", header_idx, headers, sep)
 
     # Extraer filas de datos (después del header, hasta línea vacía o sección nueva)
     rows = []
@@ -312,7 +318,7 @@ def _text_table_to_html(text: str) -> str | None:
         rows.append(cleaned)
 
     if not rows:
-        print("[TEXT→HTML] no hay filas de datos", flush=True)
+        logger.debug("TEXT→HTML no hay filas de datos")
         return None
 
     # Generar HTML
@@ -327,7 +333,7 @@ def _text_table_to_html(text: str) -> str | None:
         html += '</tr>'
     html += '</tbody></table></body></html>'
 
-    print(f"[TEXT→HTML] OK: {len(rows)} filas", flush=True)
+    logger.debug("TEXT→HTML OK: %d filas", len(rows))
     return html
 
 
@@ -346,89 +352,115 @@ def get_plain_body(msg) -> str:
 
 
 def get_html_body(msg):
-    # Intento 1: buscar text/html directo (TR, ACONEX, etc.)
+    # Single-pass MIME tree walk
+    html_parts, tnef_parts, plain_parts = [], [], []
     if msg.is_multipart():
         for part in msg.walk():
-            if part.get_content_type() == "text/html":
+            ct = part.get_content_type()
+            if ct == "text/html":
+                html_parts.append(part)
+            elif ct == "application/ms-tnef":
                 payload = part.get_payload(decode=True)
-                charset = part.get_content_charset() or "utf-8"
-                return payload.decode(charset, errors="replace")
+                if payload:
+                    tnef_parts.append(payload)
+            elif ct == "text/plain":
+                plain_parts.append(part)
     else:
-        if msg.get_content_type() == "text/html":
-            payload = msg.get_payload(decode=True)
-            charset = msg.get_content_charset() or "utf-8"
-            return payload.decode(charset, errors="replace")
+        ct = msg.get_content_type()
+        if ct == "text/html":
+            html_parts.append(msg)
+        elif ct == "text/plain":
+            plain_parts.append(msg)
+
+    # Intento 1: text/html directo (TR, ACONEX, etc.)
+    for part in html_parts:
+        payload = part.get_payload(decode=True)
+        charset = part.get_content_charset() or "utf-8"
+        return payload.decode(charset, errors="replace")
 
     # Intento 2: extraer HTML de TNEF (emails GAIA/Outlook)
-    has_tnef = False
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "application/ms-tnef":
-                has_tnef = True
-                try:
-                    tnef_data = part.get_payload(decode=True)
-                    tnef = TNEF(tnef_data)
-                    print(f"[TNEF] htmlbody={bool(tnef.htmlbody)}, rtfbody={bool(tnef.rtfbody)}, body={bool(tnef.body)}", flush=True)
+    for tnef_idx, tnef_data in enumerate(tnef_parts):
+        try:
+            tnef = TNEF(tnef_data)
+            logger.debug("TNEF#%d htmlbody=%s, rtfbody=%s, body=%s, attachments=%d",
+                         tnef_idx, bool(tnef.htmlbody), bool(tnef.rtfbody), bool(tnef.body), len(tnef.attachments))
 
-                    # htmlbody con contenido real → devolver directamente
-                    if tnef.htmlbody:
-                        html_str = tnef.htmlbody.decode("utf-8", errors="replace") if isinstance(tnef.htmlbody, bytes) else tnef.htmlbody
-                        has_table = '<table' in html_str.lower()
-                        has_cell_text = bool(re.search(r'<t[hd][^>]*>\s*[^<\s&]', html_str, re.IGNORECASE))
-                        if not has_table or has_cell_text:
-                            print("[TNEF] htmlbody con contenido → usar", flush=True)
+            # 2a: htmlbody con contenido real → devolver directamente
+            if tnef.htmlbody:
+                html_str = _safe_to_str(tnef.htmlbody)
+                has_table = '<table' in html_str.lower()
+                has_cell_text = bool(re.search(r'<t[hd][^>]*>\s*[^<\s&]', html_str, re.IGNORECASE))
+                is_empty_skeleton = has_table and not has_cell_text
+                if not is_empty_skeleton:
+                    logger.debug("TNEF#%d htmlbody con contenido → usar", tnef_idx)
+                    return html_str
+                logger.debug("TNEF#%d htmlbody es esqueleto vacío → saltar", tnef_idx)
+
+            # 2b: buscar HTML en adjuntos TNEF (.htm/.html embebidos)
+            for att in tnef.attachments:
+                att_name = getattr(att, 'name', '') or ''
+                if att_name.lower().endswith(('.htm', '.html')):
+                    att_data = getattr(att, 'data', None)
+                    if att_data:
+                        html_str = _safe_to_str(att_data)
+                        if '<table' in html_str.lower():
+                            logger.debug("TNEF#%d adjunto HTML '%s' con tabla → usar", tnef_idx, att_name)
                             return html_str
-                        print("[TNEF] htmlbody es esqueleto vacío → saltar", flush=True)
 
-                    # rtfbody → extraer HTML (para emails GAIA que sí funcionan)
-                    if tnef.rtfbody:
-                        rtf_bytes = tnef.rtfbody if isinstance(tnef.rtfbody, bytes) else tnef.rtfbody.encode()
-                        rtf_str = _decompress_rtf(rtf_bytes, logger)
-                        html = _extract_html_from_outlook_rtf(rtf_str, logger)
-                        if html:
-                            # Verificar que la tabla tenga datos reales (no solo asteriscos)
-                            from io import StringIO
-                            import pandas as _pd
-                            try:
-                                dfs = _pd.read_html(StringIO(html))
-                                if dfs:
-                                    first_col_vals = dfs[0].iloc[:, 0].dropna().astype(str).str.strip()
-                                    real_data = first_col_vals[~first_col_vals.isin(['', '*', 'Name'])]
-                                    if len(real_data) > 0:
-                                        print(f"[TNEF] RTF→HTML con datos reales → usar", flush=True)
-                                        return html
-                                    print("[TNEF] RTF→HTML tabla sin datos reales → saltar", flush=True)
-                            except Exception:
-                                pass
+            # 2c: rtfbody → extraer HTML (para emails GAIA que sí funcionan)
+            if tnef.rtfbody:
+                rtf_bytes = tnef.rtfbody if isinstance(tnef.rtfbody, bytes) else tnef.rtfbody.encode()
+                rtf_str = _decompress_rtf(rtf_bytes, logger)
+                html = _extract_html_from_outlook_rtf(rtf_str, logger)
+                if html:
+                    # Verificar que la tabla tenga datos reales (no solo asteriscos)
+                    cells = re.findall(r'<t[dh][^>]*>\s*([^<]*\S[^<]*)</t[dh]>', html, re.IGNORECASE)
+                    real = [c for c in cells if c.strip() not in ('', '*', 'Name')]
+                    if len(real) > 0:
+                        logger.debug("TNEF#%d RTF→HTML con datos reales → usar", tnef_idx)
+                        return html
+                    logger.debug("TNEF#%d RTF→HTML tabla sin datos reales → saltar", tnef_idx)
 
-                    # body plano de TNEF
-                    if tnef.body:
-                        body_str = tnef.body.decode("utf-8", errors="replace") if isinstance(tnef.body, bytes) else tnef.body
-                        html_from_text = _text_table_to_html(body_str)
-                        if html_from_text:
-                            print("[TNEF] body → text_table_to_html → OK", flush=True)
-                            return html_from_text
+            # 2d: body plano de TNEF
+            if tnef.body:
+                body_str = _safe_to_str(tnef.body)
+                html_from_text = _text_table_to_html(body_str)
+                if html_from_text:
+                    logger.debug("TNEF#%d body → text_table_to_html → OK", tnef_idx)
+                    return html_from_text
 
-                except Exception as e:
-                    logger.warning(f"Error decodificando TNEF: {e}")
-                    print(f"[TNEF] error: {e}", flush=True)
+            # 2e: adjuntos texto/RTF dentro del TNEF como último recurso
+            for att in tnef.attachments:
+                att_name = getattr(att, 'name', '') or ''
+                att_data = getattr(att, 'data', None)
+                if not att_data:
                     continue
+                # Adjuntos .rtf embebidos
+                if att_name.lower().endswith('.rtf'):
+                    rtf_str = _safe_to_str(att_data)
+                    html = _extract_html_from_outlook_rtf(rtf_str, logger)
+                    if html and '<table' in html.lower():
+                        logger.debug("TNEF#%d adjunto RTF '%s' → HTML → usar", tnef_idx, att_name)
+                        return html
+                # Adjuntos .txt embebidos
+                if att_name.lower().endswith('.txt'):
+                    text = _safe_to_str(att_data)
+                    html_from_text = _text_table_to_html(text)
+                    if html_from_text:
+                        logger.debug("TNEF#%d adjunto TXT '%s' → tabla → usar", tnef_idx, att_name)
+                        return html_from_text
+
+        except Exception as e:
+            logger.warning(f"Error decodificando TNEF#{tnef_idx}: {e}")
+            continue
 
     # Intento 3: text/plain → construir HTML tabla (PRODOC, emails sin text/html ni TNEF usable)
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                charset = part.get_content_charset() or "utf-8"
-                plain = part.get_payload(decode=True).decode(charset, errors="replace")
-                html_from_text = _text_table_to_html(plain)
-                if html_from_text:
-                    print("[FALLBACK] text/plain → HTML tabla OK", flush=True)
-                    return html_from_text
-    else:
-        if msg.get_content_type() == "text/plain":
-            plain = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", errors="replace")
-            html_from_text = _text_table_to_html(plain)
-            if html_from_text:
-                return html_from_text
+    for part in plain_parts:
+        charset = part.get_content_charset() or "utf-8"
+        plain = part.get_payload(decode=True).decode(charset, errors="replace")
+        html_from_text = _text_table_to_html(plain)
+        if html_from_text:
+            logger.debug("text/plain → HTML tabla OK")
+            return html_from_text
 
     return ""

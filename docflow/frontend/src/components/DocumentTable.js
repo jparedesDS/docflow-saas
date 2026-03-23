@@ -25,7 +25,7 @@ function SkeletonTable() {
   );
 }
 
-export default function DocumentTable({ documents, columns, loading, onRowClick }) {
+export default function DocumentTable({ documents, columns, loading, onRowClick, selectable, selectedRows, onSelectedChange }) {
   const { t } = useI18n();
   const [sortCol, setSortCol] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
@@ -107,6 +107,21 @@ export default function DocumentTable({ documents, columns, loading, onRowClick 
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-card-hover border-b border-border">
+                {selectable && (
+                  <th className="px-2 py-3 w-8 text-center">
+                    <input
+                      type="checkbox"
+                      checked={paged.length > 0 && paged.every((d, i) => selectedRows?.has(i))}
+                      onChange={(e) => {
+                        if (!onSelectedChange) return;
+                        const next = new Set(selectedRows || []);
+                        paged.forEach((_, i) => { if (e.target.checked) next.add(i); else next.delete(i); });
+                        onSelectedChange(next);
+                      }}
+                      style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                    />
+                  </th>
+                )}
                 {columns.map((col) => (
                   <th
                     key={col}
@@ -135,6 +150,21 @@ export default function DocumentTable({ documents, columns, loading, onRowClick 
                   onMouseEnter={e => e.currentTarget.style.borderLeftColor = "var(--accent)"}
                   onMouseLeave={e => e.currentTarget.style.borderLeftColor = "transparent"}
                 >
+                  {selectable && (
+                    <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRows?.has(i) || false}
+                        onChange={() => {
+                          if (!onSelectedChange) return;
+                          const next = new Set(selectedRows || []);
+                          if (next.has(i)) next.delete(i); else next.add(i);
+                          onSelectedChange(next);
+                        }}
+                        style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                      />
+                    </td>
+                  )}
                   {columns.map((col) => (
                     <td key={col} className="px-4 py-3 whitespace-nowrap">
                       {isStatusCol(col) ? (

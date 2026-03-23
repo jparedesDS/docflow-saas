@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { motion } from "framer-motion";
+import React, { useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { EnvelopeSimple, Lock, Eye, EyeSlash, User, WarningCircle } from "@phosphor-icons/react";
 import api from "../services/api";
 import { useI18n } from "../contexts/I18nContext";
 
@@ -38,19 +39,220 @@ export const LOGIN_USERS = [
   { username: "laura.minguez",    name: "Laura Minguez",    initials: "LM",  role: "Comercial"           },
 ];
 
+/* ── Transition variants ─────────────────────────── */
+const pageVariants = {
+  initial: { opacity: 0, y: 12, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: -8, scale: 0.98 },
+};
+const pageTransition = { duration: 0.25, ease: [0.16, 1, 0.3, 1] };
+
+/* ── Background ──────────────────────────────────── */
+function LoginBackground({ children }) {
+  return (
+    <>
+      <div className="login-bg">
+        <div className="login-vignette" />
+      </div>
+      <div style={{ position: "relative", zIndex: 1 }}>
+        {children}
+      </div>
+    </>
+  );
+}
+
+/* ── Brand header ────────────────────────────────── */
+function BrandHeader({ subtitle }) {
+  return (
+    <div style={{ textAlign: "center", marginBottom: 36 }}>
+      {/* Logo mark */}
+      <div style={{
+        width: 36, height: 36, borderRadius: 10, margin: "0 auto 14px",
+        background: "linear-gradient(135deg, var(--accent), #0D9488)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#FFF", fontSize: 16, fontWeight: 800, letterSpacing: -0.5,
+      }}>
+        D
+      </div>
+      <h1 style={{
+        fontSize: 28, fontWeight: 800, color: "var(--text-main)",
+        margin: 0, letterSpacing: -0.5,
+      }}>
+        DocFlow
+      </h1>
+      <p style={{
+        fontSize: 13, color: "var(--text-muted)", marginTop: 6, marginBottom: 0,
+      }}>
+        {subtitle}
+      </p>
+      {/* Accent divider */}
+      <div style={{
+        width: 40, height: 2, borderRadius: 1,
+        background: "var(--accent)", margin: "14px auto 0",
+        opacity: 0.5,
+      }} />
+    </div>
+  );
+}
+
+/* ── User card ───────────────────────────────────── */
+function UserCard({ user, onClick }) {
+  const color = ROLES[user.role]?.color || "#3B82F6";
+
+  const handleMouseMove = useCallback((e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty("--x", `${e.clientX - rect.left}px`);
+    e.currentTarget.style.setProperty("--y", `${e.clientY - rect.top}px`);
+  }, []);
+
+  return (
+    <motion.button
+      onClick={onClick}
+      whileHover={{ scale: 1.04, y: -2 }}
+      whileTap={{ scale: 0.97 }}
+      onMouseMove={handleMouseMove}
+      className="user-card"
+      style={{
+        padding: "16px 12px",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+        cursor: "pointer",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
+        borderRadius: 14,
+        transition: "border-color 0.2s, box-shadow 0.2s",
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = `${color}60`;
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = "var(--border)";
+      }}
+    >
+      {/* Avatar with ring */}
+      <div style={{
+        width: 48, height: 48, borderRadius: "50%",
+        backgroundColor: color,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#FFF", fontSize: 13, fontWeight: 700,
+        boxShadow: `0 0 0 2px var(--bg-card), 0 0 0 3px ${color}30`,
+      }}>
+        {user.initials}
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <p style={{
+          fontSize: 13, fontWeight: 700, color: "var(--text-main)",
+          margin: 0, marginBottom: 4,
+        }}>
+          {user.name}
+        </p>
+        {/* Role badge pill */}
+        <span style={{
+          display: "inline-block",
+          fontSize: 10, fontWeight: 600,
+          padding: "2px 8px", borderRadius: 99,
+          backgroundColor: `${color}12`,
+          color: color,
+        }}>
+          {user.role}
+        </span>
+      </div>
+    </motion.button>
+  );
+}
+
+/* ── Password input ──────────────────────────────── */
+function PasswordInput({ value, onChange, onKeyDown, error, showPassword, onToggle, placeholder, shaking }) {
+  const { t } = useI18n();
+  return (
+    <div className={`login-input-wrapper has-toggle ${shaking ? "animate-shake" : ""}`}>
+      <Lock size={16} weight="bold" className="login-input-icon" />
+      <input
+        type={showPassword ? "text" : "password"}
+        autoFocus
+        value={value}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+        className="input-field"
+        style={{
+          height: 44, borderRadius: 10,
+          borderColor: error ? "#DC2626" : undefined,
+        }}
+      />
+      <button
+        type="button"
+        className="login-input-toggle"
+        onClick={onToggle}
+        tabIndex={-1}
+        title={showPassword ? t("loginHidePassword") : t("loginShowPassword")}
+      >
+        {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  );
+}
+
+/* ── Error message ───────────────────────────────── */
+function ErrorMessage({ message }) {
+  return (
+    <AnimatePresence>
+      {message && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            fontSize: 12, color: "#DC2626", marginTop: 6,
+          }}
+        >
+          <WarningCircle size={14} weight="fill" />
+          {message}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/* ── Spinner ─────────────────────────────────────── */
+function Spinner() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.6s linear infinite" }}>
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+        strokeDasharray="28" strokeDashoffset="8" opacity="0.8" />
+    </svg>
+  );
+}
+
+/* ── Footer ──────────────────────────────────────── */
+function LoginFooter() {
+  return (
+    <p style={{
+      fontSize: 11, color: "var(--text-muted)", opacity: 0.5,
+      marginTop: 40, textAlign: "center",
+    }}>
+      DocFlow v1.0 &middot; EIPSA 2026
+    </p>
+  );
+}
+
+/* ── Main component ──────────────────────────────── */
 function LoginScreen({ onShowRegister }) {
   const { t } = useI18n();
-  const [mode, setMode] = useState("select"); // "select" | "password" | "email"
+  const [mode, setMode] = useState("select");
   const [selected, setSelected] = useState(null);
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [shaking, setShaking] = useState(false);
 
   const handleSelect = (u) => {
     setSelected(u);
     setPassword("");
     setError(false);
+    setShowPassword(false);
     setMode("password");
   };
 
@@ -59,6 +261,12 @@ function LoginScreen({ onShowRegister }) {
     setEmail("");
     setPassword("");
     setError(false);
+    setShowPassword(false);
+  };
+
+  const triggerShake = () => {
+    setShaking(true);
+    setTimeout(() => setShaking(false), 500);
   };
 
   const handleConfirm = async () => {
@@ -77,6 +285,7 @@ function LoginScreen({ onShowRegister }) {
       window.location.reload();
     } catch {
       setError(true);
+      triggerShake();
     } finally {
       setLoading(false);
     }
@@ -86,196 +295,233 @@ function LoginScreen({ onShowRegister }) {
     setSelected(null);
     setMode("select");
     setError(false);
+    setShowPassword(false);
   };
 
+  const selectedColor = selected ? (ROLES[selected.role]?.color || "#3B82F6") : "var(--accent)";
+
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", background: "var(--bg-page)", padding: 24 }}>
+    <LoginBackground>
+      <div style={{
+        minHeight: "100dvh", display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center", padding: 24,
+      }}>
+        <BrandHeader
+          subtitle={
+            mode === "select" ? t("loginSubtitle") :
+            mode === "email" ? t("loginCredentials") :
+            t("loginPasswordPrompt")
+          }
+        />
 
-      <div style={{ marginBottom: 32, textAlign: "center" }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: "#FFF", marginBottom: 4 }}>DocFlow</h1>
-        <p style={{ fontSize: 13, color: "#71717A" }}>
-          {mode === "select" ? t('loginSubtitle') :
-           mode === "email" ? "Introduce tus credenciales" :
-           t('loginPasswordPrompt')}
-        </p>
-      </div>
-
-      {mode === "select" ? (
-        <>
-          <div style={{
-            display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 12, width: "100%", maxWidth: 520,
-          }}>
-            {LOGIN_USERS.map(u => {
-              const color = ROLES[u.role]?.color || "#3B82F6";
-              return (
-                <motion.button
-                  key={u.initials}
-                  onClick={() => handleSelect(u)}
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="card"
-                  style={{
-                    padding: "16px 12px",
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                    cursor: "pointer", transition: "border-color 0.15s",
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = color}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
-                >
-                  <div style={{
-                    width: 44, height: 44, borderRadius: "50%",
-                    backgroundColor: color,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "#FFF", fontSize: 13, fontWeight: 700,
-                  }}>
-                    {u.initials}
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#FFF", marginBottom: 2 }}>{u.name}</p>
-                    <p style={{ fontSize: 10, color: "#71717A" }}>{u.role}</p>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-
-          {/* Multi-tenant login options */}
-          <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-            <button
-              onClick={handleEmailMode}
-              style={{
-                background: "transparent",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: "9px 24px",
-                color: "#71717A",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
+        <AnimatePresence mode="wait">
+          {/* ── Select mode ─────────────────────── */}
+          {mode === "select" && (
+            <motion.div
+              key="select"
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
+              style={{ width: "100%", maxWidth: 540 }}
             >
-              Iniciar sesión con email
-            </button>
-            {onShowRegister && (
-              <button
-                onClick={onShowRegister}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#6366F1",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  padding: "4px 0",
-                }}
-              >
-                Crear nueva organización
-              </button>
-            )}
-          </div>
-        </>
-      ) : mode === "email" ? (
-        <div className="bg-card border border-border" style={{ borderRadius: 16, padding: 28, width: "100%", maxWidth: 320 }}>
-          <input
-            type="text"
-            autoFocus
-            value={email}
-            onChange={e => { setEmail(e.target.value); setError(false); }}
-            placeholder="usuario"
-            className="rounded-lg"
-            style={{
-              width: "100%", padding: "9px 12px",
-              border: `1px solid ${error ? "#DC2626" : "var(--border)"}`,
-              background: "var(--bg-page)", color: "#FFF", fontSize: 13,
-              outline: "none", boxSizing: "border-box", marginBottom: 10,
-            }}
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={e => { setPassword(e.target.value); setError(false); }}
-            onKeyDown={e => e.key === "Enter" && handleConfirm()}
-            placeholder={t('loginPassword')}
-            className="rounded-lg"
-            style={{
-              width: "100%", padding: "9px 12px",
-              border: `1px solid ${error ? "#DC2626" : "var(--border)"}`,
-              background: "var(--bg-page)", color: "#FFF", fontSize: 13,
-              outline: "none", boxSizing: "border-box", marginBottom: 6,
-            }}
-          />
-          {error && <p style={{ fontSize: 11, color: "#DC2626", marginBottom: 10 }}>{t('loginWrongPassword')}</p>}
+              {/* User grid */}
+              <div className="login-user-grid">
+                {LOGIN_USERS.map(u => (
+                  <UserCard key={u.initials} user={u} onClick={() => handleSelect(u)} />
+                ))}
+              </div>
 
-          <div style={{ display: "flex", gap: 8, marginTop: error ? 4 : 10 }}>
-            <button onClick={handleBack}
-              className="border border-border rounded-lg"
-              style={{ flex: 1, padding: "9px 0", background: "transparent",
-                color: "#71717A", fontSize: 13, cursor: "pointer" }}>
-              {t('loginBack')}
-            </button>
-            <button onClick={handleConfirm} disabled={loading}
-              className="rounded-lg"
-              style={{ flex: 2, padding: "9px 0",
-                background: "#4F46E5",
-                border: "none", color: "#FFF", fontWeight: 700, fontSize: 13,
-                cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}>
-              {loading ? t('loginEntering') : t('loginEnter')}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-card border border-border" style={{ borderRadius: 16, padding: 28, width: "100%", maxWidth: 320 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-            <div style={{
-              width: 44, height: 44, borderRadius: "50%",
-              backgroundColor: ROLES[selected.role]?.color || "#3B82F6",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#FFF", fontSize: 13, fontWeight: 700, flexShrink: 0,
-            }}>
-              {selected.initials}
-            </div>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: "#FFF", marginBottom: 2 }}>{selected.name}</p>
-              <p style={{ fontSize: 11, color: "#71717A" }}>{selected.role}</p>
-            </div>
-          </div>
+              {/* Divider */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 12,
+                margin: "24px 0 16px",
+              }}>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
+                  {t("loginOrDivider")}
+                </span>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              </div>
 
-          <input
-            type="password"
-            autoFocus
-            value={password}
-            onChange={e => { setPassword(e.target.value); setError(false); }}
-            onKeyDown={e => e.key === "Enter" && handleConfirm()}
-            placeholder={t('loginPassword')}
-            className="rounded-lg"
-            style={{
-              width: "100%", padding: "9px 12px",
-              border: `1px solid ${error ? "#DC2626" : "var(--border)"}`,
-              background: "var(--bg-page)", color: "#FFF", fontSize: 13,
-              outline: "none", boxSizing: "border-box", marginBottom: 6,
-            }}
-          />
-          {error && <p style={{ fontSize: 11, color: "#DC2626", marginBottom: 10 }}>{t('loginWrongPassword')}</p>}
+              {/* Secondary actions */}
+              <div style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+              }}>
+                <button
+                  onClick={handleEmailMode}
+                  className="btn-secondary"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "10px 28px", fontSize: 13, borderRadius: 10,
+                  }}
+                >
+                  <EnvelopeSimple size={16} weight="bold" />
+                  {t("loginWithEmail")}
+                </button>
+                {onShowRegister && (
+                  <button
+                    onClick={onShowRegister}
+                    style={{
+                      background: "transparent", border: "none",
+                      color: "var(--accent)", fontSize: 12, fontWeight: 600,
+                      cursor: "pointer", padding: "4px 0",
+                    }}
+                  >
+                    {t("loginCreateOrg")}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
 
-          <div style={{ display: "flex", gap: 8, marginTop: error ? 4 : 10 }}>
-            <button onClick={handleBack}
-              className="border border-border rounded-lg"
-              style={{ flex: 1, padding: "9px 0", background: "transparent",
-                color: "#71717A", fontSize: 13, cursor: "pointer" }}>
-              {t('loginBack')}
-            </button>
-            <button onClick={handleConfirm} disabled={loading}
-              className="rounded-lg"
-              style={{ flex: 2, padding: "9px 0",
-                background: ROLES[selected.role]?.color || "#3B82F6",
-                border: "none", color: "#FFF", fontWeight: 700, fontSize: 13,
-                cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}>
-              {loading ? t('loginEntering') : t('loginEnter')}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+          {/* ── Password mode ───────────────────── */}
+          {mode === "password" && (
+            <motion.div
+              key="password"
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
+              style={{ width: "100%", maxWidth: 380 }}
+            >
+              <div className="login-card" style={{ padding: 28 }}>
+                {/* Selected user */}
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
+                  <div style={{
+                    width: 52, height: 52, borderRadius: "50%",
+                    backgroundColor: selectedColor,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#FFF", fontSize: 15, fontWeight: 700, flexShrink: 0,
+                    boxShadow: `0 0 0 2px var(--bg-card), 0 0 0 3px ${selectedColor}30`,
+                  }}>
+                    {selected?.initials}
+                  </div>
+                  <div>
+                    <p style={{
+                      fontSize: 14, fontWeight: 700, color: "var(--text-main)",
+                      margin: 0, marginBottom: 4,
+                    }}>
+                      {selected?.name}
+                    </p>
+                    <span style={{
+                      display: "inline-block",
+                      fontSize: 10, fontWeight: 600,
+                      padding: "2px 8px", borderRadius: 99,
+                      backgroundColor: `${selectedColor}12`,
+                      color: selectedColor,
+                    }}>
+                      {selected?.role}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Password input */}
+                <PasswordInput
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setError(false); }}
+                  onKeyDown={e => e.key === "Enter" && handleConfirm()}
+                  error={error}
+                  showPassword={showPassword}
+                  onToggle={() => setShowPassword(p => !p)}
+                  placeholder={t("loginPassword")}
+                  shaking={shaking}
+                />
+
+                <ErrorMessage message={error ? t("loginWrongPassword") : null} />
+
+                {/* Buttons */}
+                <div style={{ display: "flex", gap: 8, marginTop: error ? 12 : 18 }}>
+                  <button onClick={handleBack} className="btn-secondary"
+                    style={{ flex: 1, height: 44, fontSize: 13, borderRadius: 10 }}>
+                    {t("loginBack")}
+                  </button>
+                  <button onClick={handleConfirm} disabled={loading}
+                    className="btn-primary"
+                    style={{
+                      flex: 2, height: 44, fontSize: 13, borderRadius: 10,
+                      background: selectedColor,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      opacity: loading ? 0.7 : 1,
+                      cursor: loading ? "wait" : "pointer",
+                    }}>
+                    {loading ? <Spinner /> : t("loginEnter")}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── Email mode ──────────────────────── */}
+          {mode === "email" && (
+            <motion.div
+              key="email"
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
+              style={{ width: "100%", maxWidth: 380 }}
+            >
+              <div className="login-card" style={{ padding: 28 }}>
+                {/* Username input */}
+                <div className="login-input-wrapper" style={{ marginBottom: 12 }}>
+                  <User size={16} weight="bold" className="login-input-icon" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={email}
+                    onChange={e => { setEmail(e.target.value); setError(false); }}
+                    placeholder={t("loginUsername")}
+                    className="input-field"
+                    style={{
+                      height: 44, borderRadius: 10,
+                      borderColor: error ? "#DC2626" : undefined,
+                    }}
+                  />
+                </div>
+
+                {/* Password input */}
+                <PasswordInput
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setError(false); }}
+                  onKeyDown={e => e.key === "Enter" && handleConfirm()}
+                  error={error}
+                  showPassword={showPassword}
+                  onToggle={() => setShowPassword(p => !p)}
+                  placeholder={t("loginPassword")}
+                  shaking={shaking}
+                />
+
+                <ErrorMessage message={error ? t("loginWrongPassword") : null} />
+
+                {/* Buttons */}
+                <div style={{ display: "flex", gap: 8, marginTop: error ? 12 : 18 }}>
+                  <button onClick={handleBack} className="btn-secondary"
+                    style={{ flex: 1, height: 44, fontSize: 13, borderRadius: 10 }}>
+                    {t("loginBack")}
+                  </button>
+                  <button onClick={handleConfirm} disabled={loading}
+                    className="btn-primary"
+                    style={{
+                      flex: 2, height: 44, fontSize: 13, borderRadius: 10,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      opacity: loading ? 0.7 : 1,
+                      cursor: loading ? "wait" : "pointer",
+                    }}>
+                    {loading ? <Spinner /> : t("loginEnter")}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <LoginFooter />
+      </div>
+    </LoginBackground>
   );
 }
 

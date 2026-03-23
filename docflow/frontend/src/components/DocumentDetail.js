@@ -1,10 +1,12 @@
-import React from "react";
+import React, { lazy, Suspense, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import AnimatedNumber from "./AnimatedNumber";
+import RiskIndicator from "./RiskIndicator";
 import { formatDate } from "../utils/dates";
 import { useI18n } from "../contexts/I18nContext";
+import api from "../services/api";
 import {
   X,
   IdentificationCard,
@@ -18,7 +20,13 @@ import {
   Calendar,
   Flag,
   PaperPlaneTilt,
+  Paperclip,
+  ShieldCheck,
 } from "@phosphor-icons/react";
+
+const AuditTimeline = lazy(() => import("./AuditTimeline"));
+const CommentThread = lazy(() => import("./CommentThread"));
+const FileAttachments = lazy(() => import("./FileAttachments"));
 
 /* ── Constantes ── */
 const ID_FIELDS = ["Nº Pedido", "Cliente", "Nº PO", "Nº Oferta", "Material"];
@@ -113,12 +121,41 @@ function SectionBlock({ icon: Icon, title, children }) {
   );
 }
 
+/* ── Classification levels ── */
+const CLASSIFICATION_LEVELS = [
+  { value: "public", color: "#16A34A", labelKey: "classPublic" },
+  { value: "internal", color: "#2563EB", labelKey: "classInternal" },
+  { value: "confidential", color: "#D97706", labelKey: "classConfidential" },
+  { value: "restricted", color: "#DC2626", labelKey: "classRestricted" },
+];
+
 /* ── Componente principal ── */
 export default function DocumentDetail({ document, onClose }) {
   const { t } = useI18n();
+  const [classification, setClassification] = useState("internal");
+  const [classLoading, setClassLoading] = useState(false);
+
+  const docId = document ? (document["Nº Doc. EIPSA"] || document["Documento"] || "") : "";
+
+  useEffect(() => {
+    if (!docId) return;
+    api.get(`/classification/${encodeURIComponent(docId)}`)
+      .then(res => setClassification(res.data.level || "internal"))
+      .catch(() => {});
+  }, [docId]);
+
+  const handleClassChange = async (newLevel) => {
+    if (newLevel === classification) return;
+    setClassLoading(true);
+    try {
+      await api.put(`/classification/${encodeURIComponent(docId)}`, { level: newLevel });
+      setClassification(newLevel);
+    } catch {}
+    setClassLoading(false);
+  };
+
   if (!document) return null;
 
-  const docId = document["Nº Doc. EIPSA"] || document["Documento"] || "";
   const title = document["Título"] || document["Titulo"] || "";
   const estado = document["Estado"] || "";
   const tipoDoc = document["Tipo Doc."] || "";
@@ -185,6 +222,35 @@ export default function DocumentDetail({ document, onClose }) {
                     {String(tipoDoc)}
                   </span>
                 )}
+                {/* Classification dropdown */}
+                {(() => {
+                  const cls = CLASSIFICATION_LEVELS.find(c => c.value === classification) || CLASSIFICATION_LEVELS[1];
+                  return (
+                    <select
+                      value={classification}
+                      onChange={e => handleClassChange(e.target.value)}
+                      disabled={classLoading}
+                      title={t("classLabel")}
+                      style={{
+                        fontSize: 10, fontWeight: 700, padding: "2px 6px",
+                        borderRadius: 999, border: `1px solid ${cls.color}40`,
+                        background: `${cls.color}12`, color: cls.color,
+                        cursor: classLoading ? "wait" : "pointer",
+                        appearance: "none", WebkitAppearance: "none",
+                        paddingRight: 16,
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M0 2l4 4 4-4z' fill='${encodeURIComponent(cls.color)}'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "right 4px center",
+                      }}
+                    >
+                      {CLASSIFICATION_LEVELS.map(c => (
+                        <option key={c.value} value={c.value}>{t(c.labelKey)}</option>
+                      ))}
+                    </select>
+                  );
+                })()}
+                {/* Risk indicator */}
+                {docId && <RiskIndicator documentRef={docId} compact />}
               </div>
             </div>
             <button onClick={onClose} className="btn-ghost p-1.5" style={{ marginLeft: 8 }}>
@@ -335,6 +401,39 @@ export default function DocumentDetail({ document, onClose }) {
                 {String(historial)}
               </p>
             </div>
+          )}
+
+          {/* File Attachments */}
+          {docId && (
+            <Suspense fallback={null}>
+              <div style={{ marginTop: 12 }}>
+                <SectionBlock icon={Paperclip} title={t('ddAttachments')}>
+                  <FileAttachments documentRef={docId} />
+                </SectionBlock>
+              </div>
+            </Suspense>
+          )}
+
+          {/* Comments */}
+          {docId && (
+            <Suspense fallback={null}>
+              <div style={{ marginTop: 12 }}>
+                <SectionBlock icon={ChatText} title={t('ddComments')}>
+                  <CommentThread documentRef={docId} />
+                </SectionBlock>
+              </div>
+            </Suspense>
+          )}
+
+          {/* Audit Trail */}
+          {docId && (
+            <Suspense fallback={null}>
+              <div style={{ marginTop: 12 }}>
+                <SectionBlock icon={ClockCounterClockwise} title={t('ddAuditTrail')}>
+                  <AuditTimeline documentRef={docId} />
+                </SectionBlock>
+              </div>
+            </Suspense>
           )}
         </div>
 

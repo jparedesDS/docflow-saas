@@ -310,6 +310,7 @@ export default function InboxAssistant() {
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [showAI, setShowAI] = useState(false);
+  const [noEmailConfig, setNoEmailConfig] = useState(false);
 
   const fetchEmails = useCallback(async () => {
     setLoading(true);
@@ -317,7 +318,11 @@ export default function InboxAssistant() {
       const filter = filterUnread ? "unread" : "all";
       const res = await api.get("/inbox/emails", { params: { folder: "INBOX", filter } });
       setEmails(Array.isArray(res.data) ? res.data : []);
-    } catch {
+      setNoEmailConfig(false);
+    } catch (err) {
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes("Email no configurado")) {
+        setNoEmailConfig(true);
+      }
       setEmails([]);
     } finally {
       setLoading(false);
@@ -352,6 +357,24 @@ export default function InboxAssistant() {
   });
 
   const unreadCount = emails.filter(e => !e.is_read).length;
+
+  if (noEmailConfig) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", height: "calc(100vh - 220px)",
+        textAlign: "center", gap: 12,
+      }}>
+        <EnvelopeSimple size={56} weight="thin" className="text-text-muted" style={{ opacity: 0.4 }} />
+        <h3 className="text-text-main" style={{ fontSize: 16, fontWeight: 700 }}>
+          {t("emailNotConfigured")}
+        </h3>
+        <p className="text-text-muted" style={{ fontSize: 13, maxWidth: 360 }}>
+          {t("emailNotConfiguredDesc")}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>

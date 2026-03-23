@@ -4,7 +4,7 @@ import api from "../services/api";
 import SkeletonCard from "../components/SkeletonCard";
 import PageHeader from "../components/PageHeader";
 import TopLoadingBar from "../components/TopLoadingBar";
-import { ArrowClockwise, PaperPlaneTilt, FileText } from "@phosphor-icons/react";
+import { ArrowClockwise, PaperPlaneTilt, FileText, MicrosoftExcelLogo } from "@phosphor-icons/react";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import { STATUS_COLORS } from "../constants/status";
@@ -52,10 +52,38 @@ export default function Devoluciones() {
   const [sending, setSending]       = useState(false);
   const [sendResult, setSendResult] = useState(null);
 
+  // Response templates
+  const [templates, setTemplates] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSubject, setTemplateSubject] = useState("");
+  const [templateBody, setTemplateBody] = useState("");
+
   const invalidTo = validateEmails(toField);
   const invalidCc = validateEmails(ccField);
 
   useEffect(() => { loadEmails(); }, []);
+
+  useEffect(() => {
+    api.get("/response-templates/").then(r => setTemplates(r.data || [])).catch(() => {});
+  }, []);
+
+  const applyTemplate = async (templateId) => {
+    if (!preview) return;
+    const variables = {
+      transmittal_ref: preview.transmittal_code || preview.subject || "",
+      pedido: preview.documents?.[0]?.["Nº Pedido"] || "",
+      docs_list: `<ul>${(preview.documents || []).map(d => `<li>${d["Doc. Cliente"] || ""} — ${d["Título"] || ""}</li>`).join("")}</ul>`,
+      status_summary: `<ul>${(preview.documents || []).map(d => `<li>${d["Doc. Cliente"] || ""}: ${d["Estado"] || "Pendiente"}</li>`).join("")}</ul>`,
+      subject: preview.subject || "",
+      message: "",
+    };
+    try {
+      const res = await api.post("/response-templates/render", { template_id: templateId, variables });
+      setTemplateSubject(res.data.subject || "");
+      setTemplateBody(res.data.body_html || "");
+      setShowTemplates(false);
+    } catch {}
+  };
 
   const loadEmails = async () => {
     setLoading(true); setError(null);
@@ -97,6 +125,16 @@ export default function Devoluciones() {
       setSendResult({ success: false, error: err.response?.data?.detail || "Error procesando" });
     }
     setSending(false);
+  };
+
+  const exportToExcel = async () => {
+    if (!preview?.documents?.length) return;
+    const XLSX = await import("xlsx");
+    const ws = XLSX.utils.json_to_sheet(preview.documents);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Documentos");
+    const pedido = (preview.documents[0]?.["Nº Pedido"] || "docs").replace(/\//g, "-");
+    XLSX.writeFile(wb, `${pedido}_${preview.platform || "transmittal"}.xlsx`);
   };
 
   if (loading) return <LoadingSkeleton />;
@@ -300,9 +338,53 @@ export default function Devoluciones() {
                     )}
                   </div>
                 </div>
-                <Button variant="primary" icon={PaperPlaneTilt} onClick={() => setShowModal(true)}>
-                  {t('eaNotify')}
-                </Button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {templates.length > 0 && (
+                    <div style={{ position: "relative" }}>
+                      <Button variant="secondary" onClick={() => setShowTemplates(!showTemplates)}>
+                        {t("eaUseTemplate")}
+                      </Button>
+                      {showTemplates && (
+                        <>
+                          <div style={{ position: "fixed", inset: 0, zIndex: 39 }} onClick={() => setShowTemplates(false)} />
+                          <div style={{
+                            position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 40,
+                            background: "var(--bg-card)", border: "1px solid var(--border)",
+                            borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                            width: 260, maxHeight: 240, overflowY: "auto",
+                          }}>
+                            {templates.filter(t => {
+                              const p = (preview?.platform || "").toUpperCase();
+                              return t.platform === "ALL" || t.platform === p;
+                            }).map(tmpl => (
+                              <button
+                                key={tmpl.id}
+                                onClick={() => applyTemplate(tmpl.id)}
+                                style={{
+                                  display: "block", width: "100%", textAlign: "left",
+                                  padding: "8px 12px", border: "none", cursor: "pointer",
+                                  background: "transparent", fontSize: 12,
+                                  color: "var(--text-main)",
+                                  borderBottom: "1px solid var(--border)",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = "var(--bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                              >
+                                <span style={{ fontWeight: 600 }}>{tmpl.name}</span>
+                                <span className="text-text-muted" style={{ display: "block", fontSize: 10, marginTop: 2 }}>
+                                  {tmpl.platform}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <Button variant="primary" icon={PaperPlaneTilt} onClick={() => setShowModal(true)}>
+                    {t('eaNotify')}
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -379,6 +461,23 @@ export default function Devoluciones() {
               ).map(([estado, count]) => (
                 <Badge key={estado} status={estado} label={`${count} ${estado}`} variant="dot" />
               ))}
+              <div style={{ marginLeft: "auto" }}>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={exportToExcel}
+                  title="Exportar a Excel"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: "#16A34A18", color: "#16A34A", border: "1px solid #16A34A40",
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#16A34A28"}
+                  onMouseLeave={e => e.currentTarget.style.background = "#16A34A18"}>
+                  <MicrosoftExcelLogo size={14} weight="bold" />
+                  Excel
+                </motion.button>
+              </div>
             </div>
           </div>
         )}
@@ -453,11 +552,17 @@ export default function Devoluciones() {
                   <div className="border border-border rounded-lg" style={{ background: "var(--bg-page)", padding: 12, fontSize: 13 }}>
                     <p className="text-text-muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Vista previa del asunto</p>
                     <p className="text-text-main" style={{ fontWeight: 600 }}>
-                      DEV: {preview.documents[0]?.["Nº Pedido"] || ""} [{preview.transmittal_code || preview.subject}]
+                      {templateSubject || `DEV: ${preview.documents[0]?.["Nº Pedido"] || ""} [${preview.transmittal_code || preview.subject}]`}
                     </p>
                     <p className="text-text-muted" style={{ marginTop: 4 }}>
                       {preview.documents.length} documento{preview.documents.length !== 1 ? "s" : ""} · Plazo: 15 días
                     </p>
+                  </div>
+                )}
+                {templateBody && (
+                  <div className="border border-border rounded-lg" style={{ background: "var(--bg-page)", padding: 12, fontSize: 12 }}>
+                    <p className="text-text-muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{t("eaTemplatePreview")}</p>
+                    <div className="text-text-sub" style={{ lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: templateBody }} />
                   </div>
                 )}
               </div>

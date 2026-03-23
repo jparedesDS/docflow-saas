@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../services/api";
 import DocumentDetail from "../components/DocumentDetail";
@@ -8,6 +8,10 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import { DownloadSimple, CaretUp, CaretDown, Files, PaperPlaneTilt, ArrowUUpLeft, Warning, WarningOctagon, ClockCountdown, CheckCircle, FileMagnifyingGlass } from "@phosphor-icons/react";
 import { STATUS_COLORS } from "../constants/status";
 import { useI18n } from "../contexts/I18nContext";
+import { useTenant } from "../contexts/TenantContext";
+
+const BulkActionBar = lazy(() => import("../components/BulkActionBar"));
+const FacetedSearch = lazy(() => import("../components/FacetedSearch"));
 
 function getStatusStyle(status) {
   const n = (status || "").toLowerCase().trim().replace(/[\s.]+/g, "_");
@@ -94,6 +98,11 @@ export default function Documents() {
   const [sortAsc, setSortAsc] = useState(true);
   const [page, setPage] = useState(0);
   const [activeKpi, setActiveKpi] = useState(null);
+  const [selectedRows, setSelectedRows] = useState(new Set());
+  const tenant = useTenant();
+  const canBulkAction = tenant?.hasFeature?.("bulk_actions") ?? false;
+  const [showFacets, setShowFacets] = useState(false);
+  const [facetFilters, setFacetFilters] = useState({});
   const pageSize = 30;
 
   const COL_LABELS = useMemo(() => getColLabels(t), [t]);
@@ -175,6 +184,21 @@ export default function Documents() {
   const displayCols = VISIBLE_COLUMNS.filter(c => allColumns.includes(c));
 
   let filtered = documents;
+
+  // Apply facet filters
+  if (Object.keys(facetFilters).length > 0) {
+    filtered = filtered.filter(d => {
+      for (const [facet, values] of Object.entries(facetFilters)) {
+        if (!values || values.length === 0) continue;
+        const docVal = String(d[facet] || "").trim();
+        const match = facet === "Estado" && !docVal
+          ? values.includes("(vacío)")
+          : values.includes(docVal);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }
 
   if (sortCol) {
     filtered = [...filtered].sort((a, b) => {
@@ -326,6 +350,11 @@ export default function Documents() {
             <DownloadSimple size={14} />
             Excel
           </motion.button>
+          <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowFacets(!showFacets)}
+            className="border border-border text-text-sub"
+            style={{ height: 36, padding: "0 14px", background: showFacets ? "var(--accent)18" : "var(--bg-hover)", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {t("fsAdvancedSearch")}
+          </motion.button>
           <span className="text-text-muted" style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>
             {tableFiltered.length} docs{activeKpi && <span style={{ color: "var(--accent)", marginLeft: 6 }}>· {t("docsFiltered")}</span>}
           </span>
@@ -340,6 +369,22 @@ export default function Documents() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                   <tr style={{ background: "var(--bg-sidebar)" }}>
+                    <th style={{ padding: "8px 6px", width: 36, textAlign: "center" }}>
+                      {canBulkAction && <input
+                        type="checkbox"
+                        checked={paged.length > 0 && paged.every(d => selectedRows.has(d["Nº Doc. EIPSA"] || d.id))}
+                        onChange={(e) => {
+                          const next = new Set(selectedRows);
+                          paged.forEach(d => {
+                            const key = d["Nº Doc. EIPSA"] || d.id;
+                            if (e.target.checked) next.add(key);
+                            else next.delete(key);
+                          });
+                          setSelectedRows(next);
+                        }}
+                        style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                      />}
+                    </th>
                     {displayCols.map((col) => (
                       <th key={col} onClick={() => handleSort(col)}
                         className="text-text-muted"
@@ -361,15 +406,29 @@ export default function Documents() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.map((doc, i) => (
+                  {paged.map((doc, i) => {
+                    const rowKey = doc["Nº Doc. EIPSA"] || doc.id || i;
+                    const isSelected = selectedRows.has(rowKey);
+                    return (
                     <tr key={i} onClick={() => setSelectedDoc(doc)}
                       style={{
-                        background: getRowBg(doc, i),
+                        background: isSelected ? "var(--accent)12" : getRowBg(doc, i),
                         cursor: "pointer", borderBottom: "1px solid var(--border)",
                         transition: "background 0.12s",
                       }}
                       onMouseEnter={e => e.currentTarget.style.background = "var(--bg-hover)"}
-                      onMouseLeave={e => e.currentTarget.style.background = getRowBg(doc, i)}>
+                      onMouseLeave={e => e.currentTarget.style.background = isSelected ? "var(--accent)12" : getRowBg(doc, i)}>
+                      <td style={{ padding: "6px 6px", textAlign: "center", borderRight: "1px solid var(--border)" }}
+                        onClick={(e) => e.stopPropagation()}>
+                        {canBulkAction && <input type="checkbox" checked={isSelected}
+                          onChange={() => {
+                            const next = new Set(selectedRows);
+                            if (isSelected) next.delete(rowKey); else next.add(rowKey);
+                            setSelectedRows(next);
+                          }}
+                          style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                        />}
+                      </td>
                       {displayCols.map((col) => (
                         <td key={col} style={{
                           padding: "6px 10px", whiteSpace: "nowrap",
@@ -380,7 +439,8 @@ export default function Documents() {
                         </td>
                       ))}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -420,6 +480,65 @@ export default function Documents() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Faceted Search Panel */}
+      {showFacets && (
+        <Suspense fallback={null}>
+          <div style={{
+            position: "fixed", right: 0, top: 0, bottom: 0, width: 320, zIndex: 45,
+            background: "var(--bg-card)", borderLeft: "1px solid var(--border)",
+            boxShadow: "-4px 0 24px rgba(0,0,0,0.15)", overflowY: "auto", padding: 16,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span className="text-text-main" style={{ fontSize: 14, fontWeight: 700 }}>{t("fsAdvancedSearch")}</span>
+              <button onClick={() => setShowFacets(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 18 }}>
+                &times;
+              </button>
+            </div>
+            <FacetedSearch
+              data={documents}
+              activeFilters={facetFilters}
+              onFilterChange={(newFilters) => { setFacetFilters(newFilters); setPage(0); }}
+            />
+          </div>
+        </Suspense>
+      )}
+
+      {/* Bulk Action Bar */}
+      {canBulkAction && selectedRows.size > 0 && (
+        <Suspense fallback={null}>
+          <BulkActionBar
+            selectedCount={selectedRows.size}
+            onClearSelection={() => setSelectedRows(new Set())}
+            onAction={async (actionType) => {
+              const docIds = Array.from(selectedRows);
+              try {
+                let payload = {};
+                if (actionType === "update_status_approved") {
+                  payload = { doc_ids: docIds, action: "update_status", payload: { status: "Aprobado" } };
+                } else if (actionType === "update_status_rejected") {
+                  payload = { doc_ids: docIds, action: "update_status", payload: { status: "Rechazado" } };
+                } else if (actionType === "export") {
+                  showToast(`Exportando ${docIds.length} documentos...`, "info");
+                  setSelectedRows(new Set());
+                  return;
+                } else if (actionType === "assign_responsible") {
+                  const resp = window.prompt("Iniciales del responsable:");
+                  if (!resp) return;
+                  payload = { doc_ids: docIds, action: "assign_responsible", payload: { responsible: resp } };
+                } else return;
+
+                const res = await api.post("/documents/batch", payload);
+                showToast(`${res.data.success} actualizados, ${res.data.failed} fallidos`, res.data.failed > 0 ? "error" : "success");
+                setSelectedRows(new Set());
+                loadDocuments();
+              } catch (err) {
+                showToast("Error en operación masiva", "error");
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Panel detalle */}

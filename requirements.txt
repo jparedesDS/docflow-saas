@@ -28,3 +28,6 @@ alembic>=1.13,<2.0
 
 # Billing
 stripe>=8.0,<10.0
+
+# Cache / Rate limiting
+redis>=5.0,<6.0

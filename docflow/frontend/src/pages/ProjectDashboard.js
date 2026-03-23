@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useI18n } from "../contexts/I18nContext";
 import api from "../services/api";
+
+const SCurveChart = lazy(() => import("../components/SCurveChart"));
+const TraceabilityMatrix = lazy(() => import("../components/TraceabilityMatrix"));
 
 const ESTADO_COLORS = {
   Aprobado: "#16A34A",
@@ -204,6 +207,51 @@ export default function ProjectDashboard({ onNavigateToClaims, initialPedido }) 
             </div>
           </div>
 
+          {/* S-Curve Chart */}
+          {documents.length > 0 && (
+            <div className="bg-card border border-border" style={{
+              borderRadius: 10, padding: "16px 20px", marginBottom: 24,
+            }}>
+              <h3 className="text-text-main" style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                {t('phsCurvaS')}
+              </h3>
+              <Suspense fallback={<div className="text-text-muted" style={{ padding: 20, textAlign: "center", fontSize: 12 }}>{t('loading')}</div>}>
+                <SCurveChart data={(() => {
+                  // Build S-curve data from documents timeline
+                  const sorted = [...documents].sort((a, b) => {
+                    const da = a["Fecha Env. Doc."] || a["Fecha Pedido"] || "";
+                    const db = b["Fecha Env. Doc."] || b["Fecha Pedido"] || "";
+                    return da.localeCompare(db);
+                  });
+                  const total = sorted.length;
+                  if (!total) return null;
+                  const months = {};
+                  let cumApproved = 0;
+                  let cumTotal = 0;
+                  sorted.forEach(d => {
+                    const date = d["Fecha Env. Doc."] || d["Fecha Pedido"] || "";
+                    if (!date) return;
+                    const month = date.slice(0, 7);
+                    if (!months[month]) months[month] = { approved: 0, total: 0 };
+                    months[month].total++;
+                    if (/aprobado/i.test(d["Estado"] || "")) months[month].approved++;
+                  });
+                  const baseline = [];
+                  const actual = [];
+                  const keys = Object.keys(months).sort();
+                  const step = 100 / (keys.length || 1);
+                  keys.forEach((m, i) => {
+                    cumTotal += months[m].total;
+                    cumApproved += months[m].approved;
+                    baseline.push({ month: m, value: Math.round(step * (i + 1)) });
+                    actual.push({ month: m, value: Math.round((cumApproved / total) * 100) });
+                  });
+                  return { baseline, actual, predicted: [] };
+                })()} />
+              </Suspense>
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 20 }}>
             {/* Timeline */}
             <div className="bg-card border border-border" style={{
@@ -305,6 +353,16 @@ export default function ProjectDashboard({ onNavigateToClaims, initialPedido }) 
                 </table>
               </div>
             </div>
+          </div>
+
+          {/* Traceability Matrix */}
+          <div style={{ marginTop: 24 }}>
+            <h3 className="text-text-main" style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {t('pdTraceability')}
+            </h3>
+            <Suspense fallback={<div className="text-text-muted" style={{ padding: 20, textAlign: "center", fontSize: 12 }}>{t('loading')}</div>}>
+              <TraceabilityMatrix pedido={selectedPedido} />
+            </Suspense>
           </div>
         </>
       )}

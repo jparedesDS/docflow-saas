@@ -305,3 +305,214 @@ class UsageRecord(Base):
     documents_created = Column(Integer, nullable=False, default=0)
     emails_sent = Column(Integer, nullable=False, default=0)
     storage_bytes = Column(BigInteger, nullable=False, default=0)
+
+
+# ── Workflows ──────────────────────────────────────────────────────────────
+
+
+class Workflow(Base):
+    __tablename__ = "workflows"
+    __table_args__ = (
+        Index("ix_workflows_tenant", "tenant_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False, default="")
+    trigger_type = Column(String(50), nullable=False)  # document_received, status_changed, manual
+    conditions = Column(JSONB, nullable=False, default=list)
+    actions = Column(JSONB, nullable=False, default=list)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_by = Column(String(150), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class ApprovalRequest(Base):
+    __tablename__ = "approval_requests"
+    __table_args__ = (
+        Index("ix_approval_requests_tenant_status", "tenant_id", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=False, default="")
+    document_ref = Column(String(255), nullable=True)
+    status = Column(String(50), nullable=False, default="pending")  # pending, approved, rejected, escalated
+    requested_by = Column(String(150), nullable=False)
+    assigned_to = Column(String(150), nullable=True)
+    comments = Column(JSONB, nullable=False, default=list)
+    due_date = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+# ── Audit Logs ────────────────────────────────────────────────────────────
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_tenant_entity", "tenant_id", "entity_type", "entity_id"),
+        Index("ix_audit_logs_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    entity_type = Column(String(50), nullable=False)  # document, consulta, workflow, etc.
+    entity_id = Column(String(255), nullable=False)
+    action = Column(String(50), nullable=False)  # created, updated, deleted, status_changed
+    field_name = Column(String(255), nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    user_initials = Column(String(10), nullable=False, default="")
+    user_name = Column(String(255), nullable=False, default="")
+    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+# ── Saved Filters ─────────────────────────────────────────────────────────
+
+
+class SavedFilter(Base):
+    __tablename__ = "saved_filters"
+    __table_args__ = (
+        Index("ix_saved_filters_tenant_user", "tenant_id", "user_initials"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_initials = Column(String(10), nullable=False)
+    name = Column(String(255), nullable=False)
+    entity_type = Column(String(50), nullable=False, default="document")  # document, consulta
+    filters = Column(JSONB, nullable=False, default=dict)
+    is_default = Column(Boolean, nullable=False, default=False)
+    sort_config = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+# ── Document Comments ─────────────────────────────────────────────────────
+
+
+class DocumentComment(Base):
+    __tablename__ = "document_comments"
+    __table_args__ = (
+        Index("ix_document_comments_tenant_doc", "tenant_id", "document_ref"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    document_ref = Column(String(255), nullable=False)
+    parent_id = Column(Integer, ForeignKey("document_comments.id", ondelete="CASCADE"), nullable=True)
+    user_initials = Column(String(10), nullable=False)
+    user_name = Column(String(255), nullable=False, default="")
+    content = Column(Text, nullable=False)
+    mentions = Column(JSONB, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    replies = relationship("DocumentComment", backref="parent", remote_side=[id], cascade="all, delete-orphan", single_parent=True)
+
+
+# ── Document Attachments ──────────────────────────────────────────────────
+
+
+class DocumentAttachment(Base):
+    __tablename__ = "document_attachments"
+    __table_args__ = (
+        Index("ix_document_attachments_tenant_doc", "tenant_id", "document_ref"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    document_ref = Column(String(255), nullable=False)
+    filename = Column(String(500), nullable=False)
+    content_type = Column(String(255), nullable=False, default="application/octet-stream")
+    size_bytes = Column(BigInteger, nullable=False, default=0)
+    storage_path = Column(String(1000), nullable=False)
+    uploaded_by = Column(String(10), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+# ── Webhook Configs ───────────────────────────────────────────────────────
+
+
+class WebhookConfig(Base):
+    __tablename__ = "webhook_configs"
+    __table_args__ = (
+        Index("ix_webhook_configs_tenant", "tenant_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    url = Column(String(1000), nullable=False)
+    platform = Column(String(50), nullable=False, default="generic")  # slack, teams, generic
+    events = Column(JSONB, nullable=False, default=list)  # ["status_changed", "document_received", ...]
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+# ── API Keys ──────────────────────────────────────────────────────────────
+
+
+class ClientPortalAccess(Base):
+    __tablename__ = "client_portal_access"
+    __table_args__ = (
+        Index("ix_client_portal_access_tenant", "tenant_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    client_name = Column(String(255), nullable=False)
+    contact_email = Column(String(255), nullable=False)
+    token_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+# ── Response Templates ───────────────────────────────────────────────
+
+
+class ResponseTemplate(Base):
+    __tablename__ = "response_templates"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "template_id", name="uq_response_templates_tenant_tid"),
+        Index("ix_response_templates_tenant", "tenant_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    template_id = Column(String(100), nullable=False)
+    platform = Column(String(50), nullable=False, default="ALL")
+    name = Column(String(255), nullable=False)
+    subject = Column(String(500), nullable=False)
+    body_html = Column(Text, nullable=False)
+    variables = Column(JSONB, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+# ── API Keys ──────────────────────────────────────────────────────────
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        Index("ix_api_keys_tenant", "tenant_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    key_hash = Column(String(255), nullable=False)
+    key_prefix = Column(String(12), nullable=False)  # "df_xxxx" for display
+    scopes = Column(JSONB, nullable=False, default=lambda: ["read"])
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(150), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
