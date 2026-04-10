@@ -121,7 +121,4 @@ docflow/backend/test_*.py
 /README_GAIA_DIAGNOSTICO.md
 /RESUMEN_EJECUTIVO.txt
 /SOLUCION_GAIA_TNEF.md
-/docs/
-
-# Mantener solo README.md en raíz
-# (requirements.txt y docflow/prompts/ son funcionales)
+/docs/superpowers/
