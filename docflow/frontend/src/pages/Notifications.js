@@ -6,6 +6,8 @@ import SkeletonCard from "../components/SkeletonCard";
 import PageHeader from "../components/PageHeader";
 import { ArrowClockwise, Bell, Export, Gear } from "@phosphor-icons/react";
 import { useI18n } from "../contexts/I18nContext";
+import ErrorBanner from "../components/ErrorBanner";
+import EmptyState from "../components/EmptyState";
 
 function getTipoConfig(t) {
   return {
@@ -65,7 +67,6 @@ function RegistroTab({ notifications, stats, loading, filterTipo, setFilterTipo,
         <StatCard label={t("notifClaims")} value={stats.por_tipo?.reclamacion || 0} color="#DC2626" />
       </motion.div>
 
-      {/* Filter row */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span className="text-text-muted" style={{ fontSize: 11, fontWeight: 600 }}>{t("notifFilterBy")}</span>
         <FilterChip label={t("notifAll")} active={!filterTipo} onClick={() => setFilterTipo(null)} />
@@ -88,16 +89,9 @@ function RegistroTab({ notifications, stats, loading, filterTipo, setFilterTipo,
         </motion.button>
       </div>
 
-      <div className="bg-card border border-border" style={{
-        borderRadius: 10, overflow: "hidden",
-      }}>
+      <div className="bg-card border border-border" style={{ borderRadius: 10, overflow: "hidden" }}>
         {filtered.length === 0 ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            style={{ padding: 48, textAlign: "center" }}>
-            <Bell size={36} color="var(--border)" style={{ margin: "0 auto 12px", display: "block" }} />
-            <p className="text-text-muted" style={{ fontSize: 13 }}>{t("notifNone")}</p>
-            <p className="text-text-muted" style={{ fontSize: 11, marginTop: 4, opacity: 0.6 }}>{t("notifNoClaimsRegistered")}</p>
-          </motion.div>
+          <EmptyState icon={Bell} title={t("noNotifications")} description={t("noNotificationsDesc")} />
         ) : (
           <motion.div variants={{ visible: { transition: { staggerChildren: 0.04 } } }} initial="hidden" animate="visible">
             {filtered.map((n, i) => {
@@ -152,7 +146,7 @@ function AlertasTab({ t }) {
   useEffect(() => {
     api.get("/analytics/summary")
       .then(r => setUrgencias(r.data.urgencias || []))
-      .catch(() => {})
+      .catch(err => console.error("Error loading urgencies:", err))
       .finally(() => setLoadingU(false));
   }, []);
 
@@ -183,31 +177,21 @@ function AlertasTab({ t }) {
         <StatCard label={t("notifCriticalPending")} value={urgencias.filter(u => u.critico).length} color="#D97706" />
       </div>
 
-      {/* Configuración */}
-      <div className="bg-card border border-border" style={{
-        borderRadius: 10, padding: 16,
-      }}>
+      <div className="bg-card border border-border" style={{ borderRadius: 10, padding: 16 }}>
         <p className="text-text-main" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>{t("notifConfigureAlert")}</p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <label className="text-text-muted" style={{ fontSize: 11, display: "block", marginBottom: 4 }}>{t("notifDaysThreshold")}</label>
             <input type="number" min={1} value={dias} onChange={e => setDias(Number(e.target.value))}
               className="text-text-main border border-border"
-              style={{
-                width: 70, padding: "6px 10px", borderRadius: 6,
-                fontSize: 13, background: "var(--bg-input, var(--bg-page))", outline: "none",
-              }} />
+              style={{ width: 70, padding: "6px 10px", borderRadius: 6, fontSize: 13, background: "var(--bg-input, var(--bg-page))", outline: "none" }} />
           </div>
           <div style={{ flex: 1, minWidth: 220 }}>
             <label className="text-text-muted" style={{ fontSize: 11, display: "block", marginBottom: 4 }}>{t("notifRecipients")}</label>
             <input type="text" value={destinatario} onChange={e => setDestinatario(e.target.value)}
               placeholder="email@eipsa.es, otro@eipsa.es"
               className="text-text-main border border-border"
-              style={{
-                width: "100%", padding: "6px 10px", borderRadius: 6,
-                fontSize: 13, boxSizing: "border-box", background: "var(--bg-input, var(--bg-page))",
-                outline: "none",
-              }} />
+              style={{ width: "100%", padding: "6px 10px", borderRadius: 6, fontSize: 13, boxSizing: "border-box", background: "var(--bg-input, var(--bg-page))", outline: "none" }} />
           </div>
           <motion.button
             whileTap={{ scale: 0.95 }}
@@ -229,17 +213,14 @@ function AlertasTab({ t }) {
               color: result.error ? "#DC2626" : result.sent ? "#16A34A" : "#CA8A04",
               border: `1px solid ${result.error ? "#DC262640" : result.sent ? "#16A34A40" : "#CA8A0440"}`,
             }}>
-            {result.error ? `Error: ${result.error}` : result.sent ? `Alerta enviada — ${result.count} documentos incluidos` : result.message}
+            {result.error ? `Error: ${result.error}` : result.sent ? `Alerta enviada \u2014 ${result.count} documentos incluidos` : result.message}
           </motion.div>
         )}
       </div>
 
-      {/* Lista de documentos elegibles */}
       {elegibles.length > 0 && (
         <div>
-          <p className="text-text-muted" style={{ fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
-            {t("notifDocsInAlert")}
-          </p>
+          <p className="text-text-muted" style={{ fontSize: 11, fontWeight: 700, marginBottom: 8 }}>{t("notifDocsInAlert")}</p>
           <motion.div
             variants={{ visible: { transition: { staggerChildren: 0.04 } } }}
             initial="hidden" animate="visible"
@@ -251,15 +232,13 @@ function AlertasTab({ t }) {
                   className="bg-card border border-border"
                   style={{
                     display: "grid", gridTemplateColumns: "10px 1fr auto",
-                    gap: 10, padding: "8px 12px",
-                    borderRadius: 6,
-                    alignItems: "center",
+                    gap: 10, padding: "8px 12px", borderRadius: 6, alignItems: "center",
                   }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: semaforo }} />
                   <div>
                     <span className="text-text-main" style={{ fontSize: 13, fontWeight: 700 }}>{u.doc_eipsa || u.pedido}</span>
                     {u.critico && <span style={{ fontSize: 9, background: "#DC262620", color: "#DC2626", padding: "1px 5px", borderRadius: 4, fontWeight: 700, marginLeft: 6 }}>CRITICO</span>}
-                    <p className="text-text-muted" style={{ fontSize: 11, margin: "2px 0 0" }}>{u.titulo} · {u.cliente} · {u.estado}</p>
+                    <p className="text-text-muted" style={{ fontSize: 11, margin: "2px 0 0" }}>{u.titulo} \u00b7 {u.cliente} \u00b7 {u.estado}</p>
                   </div>
                   <span style={{ fontSize: 16, fontWeight: 800, color: semaforo }}>{u.dias}d</span>
                 </motion.div>
@@ -285,11 +264,13 @@ export default function Notifications() {
   const [notifications, setNotifications] = useState([]);
   const [stats, setStats] = useState({ total: 0, hoy: 0, por_tipo: {} });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filterTipo, setFilterTipo] = useState(null);
   const [activeTab, setActiveTab] = useState("registro");
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const [notRes, statsRes] = await Promise.all([
         api.get("/notifications/"),
@@ -299,7 +280,7 @@ export default function Notifications() {
       setStats(statsRes.data);
     } catch (err) {
       console.error("Error cargando notificaciones:", err);
-      showToast("Error al cargar notificaciones", "error");
+      setError(err.response?.data?.detail || t('genericError'));
     }
     setLoading(false);
   };
@@ -314,7 +295,7 @@ export default function Notifications() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("notifTitle")} description={t("notifDesc")} />
-      {/* Sub-tabs */}
+      <ErrorBanner error={error} onRetry={loadData} onDismiss={() => setError(null)} />
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", paddingBottom: 0, position: "relative" }}>
         {TABS.map(tab => (
           <div key={tab.key} style={{ position: "relative" }}>
@@ -324,8 +305,7 @@ export default function Notifications() {
                 fontSize: 13, fontWeight: 600, padding: "8px 18px", cursor: "pointer",
                 border: "none", background: "none",
                 color: activeTab === tab.key ? "var(--text-main)" : "var(--text-muted)",
-                transition: "color 0.15s",
-                position: "relative", zIndex: 1,
+                transition: "color 0.15s", position: "relative", zIndex: 1,
               }}>
               {tab.label}
             </button>
@@ -348,8 +328,7 @@ export default function Notifications() {
           <motion.div key="registro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
             <RegistroTab
               notifications={notifications} stats={stats} loading={loading}
-              filterTipo={filterTipo} setFilterTipo={setFilterTipo} loadData={loadData}
-              t={t}
+              filterTipo={filterTipo} setFilterTipo={setFilterTipo} loadData={loadData} t={t}
             />
           </motion.div>
         )}
@@ -363,7 +342,7 @@ export default function Notifications() {
   );
 }
 
-/* ── Auxiliares ── */
+/* -- Auxiliares -- */
 
 function StatCard({ label, value, color }) {
   return (
@@ -372,8 +351,7 @@ function StatCard({ label, value, color }) {
       whileHover={{ y: -2, boxShadow: "0 6px 20px rgba(0,0,0,0.12)" }}
       className="bg-card border border-border"
       style={{
-        borderRadius: 10,
-        padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
+        borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
         position: "relative", overflow: "hidden",
       }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: color }} />

@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
+from utils.cache import cache_result
 
 
 class AnalyticsService:
@@ -9,6 +10,7 @@ class AnalyticsService:
     ESTADOS_DEVOLUCION = {"com. menores", "com. mayores", "rechazado", "comentado"}
     ESTADOS_ENVIADOS = {"enviado"}
 
+    @cache_result(ttl=300, key_prefix="analytics")
     def get_analytics_summary(self, docs: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not docs:
             return self._empty_summary()

@@ -21,7 +21,7 @@ from routers import (
     schedules, tenants, billing, admin, workflows,
     audit, comments, saved_filters, attachments, webhooks_config, api_keys,
     classification, portal, response_templates, predictions,
-    my_morning, chatbot, folder_sync,
+    my_morning, chatbot, folder_sync, metrics,
 )
 from utils.config import CORS_ORIGINS
 from utils.logging_config import setup_logging
@@ -35,17 +35,21 @@ scheduler = BackgroundScheduler(timezone="Europe/Madrid")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from utils.config import validate_required_env
+    validate_required_env()
+
     from services.backup_service import run_backup
     from services.polling_service import poll_and_process
     from services.scheduled_reports_service import sync_scheduler_jobs
     from services.kpi_snapshot_service import KpiSnapshotService
     from services.folder_sync_service import FolderSyncService
+    from utils.distributed_lock import locked_job
 
-    # Infrastructure jobs (not user-configurable)
-    scheduler.add_job(run_backup, "cron", hour=2, minute=0, id="daily_backup")
-    scheduler.add_job(poll_and_process, "interval", minutes=15, id="imap_polling")
-    scheduler.add_job(KpiSnapshotService().take_snapshot, "cron", day=1, hour=0, minute=30, id="kpi_snapshot")
-    scheduler.add_job(FolderSyncService().scan_folder, "interval", minutes=30, id="folder_sync")
+    # Infrastructure jobs (not user-configurable) — wrapped with distributed lock
+    scheduler.add_job(locked_job(run_backup, "daily_backup", 600), "cron", hour=2, minute=0, id="daily_backup")
+    scheduler.add_job(locked_job(poll_and_process, "imap_polling", 300), "interval", minutes=15, id="imap_polling")
+    scheduler.add_job(locked_job(KpiSnapshotService().take_snapshot, "kpi_snapshot", 300), "cron", day=1, hour=0, minute=30, id="kpi_snapshot")
+    scheduler.add_job(locked_job(FolderSyncService().scan_folder, "folder_sync", 600), "interval", minutes=30, id="folder_sync")
 
     # Dynamic report schedules from JSON config
     sync_scheduler_jobs(scheduler)
@@ -110,6 +114,7 @@ PUBLIC_PATHS = {
     "/api/v1/auth/accept-invite",
     "/api/v1/health/",
     "/api/v1/health/liveness",
+    "/api/v1/metrics/",
     "/api/v1/tenants/register",
     "/api/v1/billing/webhooks",
 }
@@ -334,6 +339,7 @@ app.include_router(predictions.router, prefix="/api/v1/predictions", tags=["pred
 app.include_router(my_morning.router, prefix="/api/v1/my-morning", tags=["my-morning"])
 app.include_router(chatbot.router, prefix="/api/v1/chatbot", tags=["chatbot"])
 app.include_router(folder_sync.router, prefix="/api/v1/folder-sync", tags=["folder-sync"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 
 
 @app.get("/")

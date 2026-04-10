@@ -52,5 +52,9 @@ class DocumentService:
         content = await file.read()
         return {"filename": file.filename, "size": len(content), "status": "uploaded"}
 
+    def list_paginated(self, page: int, page_size: int) -> dict:
+        """Return paginated document list."""
+        return self.repo.get_paginated(page=page, page_size=page_size)
+
     def get_columns(self) -> List[str]:
         return self.repo.get_columns()

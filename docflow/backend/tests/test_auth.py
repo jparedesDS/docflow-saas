@@ -76,3 +76,92 @@ class TestRateLimiting:
             responses.append(res.status_code)
         # Should see 429 after exceeding the limit
         assert 429 in responses or all(s == 401 for s in responses)
+
+
+class TestJWTSecretRotation:
+    """Tests for JWT secret rotation support."""
+
+    def test_token_verified_with_primary_key(self):
+        """Token signed with primary key verifies normally."""
+        from services.auth_service import create_token, verify_token
+
+        user_data = {"sub": "test", "role": "dc", "initials": "TT", "tenant_id": "t1"}
+        token = create_token(user_data)
+        payload = verify_token(token)
+        assert payload["sub"] == "test"
+
+    def test_token_signed_with_old_key_verifies_with_previous(self, monkeypatch):
+        """Token signed with old key verifies when JWT_SECRET_PREVIOUS is set."""
+        import services.auth_service as auth_mod
+
+        old_secret = "old-secret-key-for-testing"
+        new_secret = "new-secret-key-for-testing"
+
+        # Sign token with old key
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", old_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", "")
+        user_data = {"sub": "rotated", "role": "dc", "initials": "RR", "tenant_id": "t1"}
+        token = auth_mod.create_token(user_data)
+
+        # Now rotate: new key is primary, old key is previous
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", new_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", old_secret)
+
+        payload = auth_mod.verify_token(token)
+        assert payload["sub"] == "rotated"
+
+    def test_token_fails_without_previous_key(self, monkeypatch):
+        """Token signed with old key fails when JWT_SECRET_PREVIOUS is not set."""
+        import services.auth_service as auth_mod
+        from jose import JWTError
+
+        old_secret = "old-secret-key-for-testing"
+        new_secret = "new-secret-key-for-testing"
+
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", old_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", "")
+        user_data = {"sub": "fail", "role": "dc", "initials": "FF", "tenant_id": "t1"}
+        token = auth_mod.create_token(user_data)
+
+        # Rotate without setting previous
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", new_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", "")
+
+        with pytest.raises(JWTError):
+            auth_mod.verify_token(token)
+
+    def test_refresh_token_rotation(self, monkeypatch):
+        """Refresh token rotation works the same way."""
+        import services.auth_service as auth_mod
+
+        old_secret = "old-refresh-secret"
+        new_secret = "new-refresh-secret"
+
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", old_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", "")
+        user_data = {"sub": "refresh", "role": "dc", "initials": "RF", "tenant_id": "t1"}
+        token = auth_mod.create_refresh_token(user_data)
+
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", new_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", old_secret)
+
+        payload = auth_mod.verify_refresh_token(token)
+        assert payload["sub"] == "refresh"
+        assert payload["type"] == "refresh"
+
+    def test_new_tokens_always_use_primary_key(self, monkeypatch):
+        """New tokens are always signed with the primary (new) key."""
+        import services.auth_service as auth_mod
+
+        new_secret = "primary-key-only"
+
+        monkeypatch.setattr(auth_mod, "JWT_SECRET", new_secret)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", "some-old-key")
+
+        user_data = {"sub": "new", "role": "dc", "initials": "NN", "tenant_id": "t1"}
+        token = auth_mod.create_token(user_data)
+
+        # Should verify with primary key alone (no previous needed)
+        monkeypatch.setattr(auth_mod, "JWT_SECRET_PREVIOUS", "")
+        payload = auth_mod.verify_token(token)
+        assert payload["sub"] == "new"

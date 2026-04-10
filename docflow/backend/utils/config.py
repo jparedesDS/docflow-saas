@@ -1,7 +1,10 @@
+import logging
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_config_logger = logging.getLogger("docflow.config")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -46,9 +49,15 @@ CORS_ORIGINS = [
 
 # Environment
 ENV = os.getenv("ENV", "development")
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "excel")
 
 # Backup destination (portable default)
 BACKUP_DEST = os.getenv("BACKUP_DEST", os.path.join(BASE_DIR, "backups"))
+
+# Cloud backup (S3-compatible)
+BACKUP_S3_BUCKET = os.getenv("BACKUP_S3_BUCKET", "")
+BACKUP_S3_PREFIX = os.getenv("BACKUP_S3_PREFIX", "docflow-backups/")
+BACKUP_S3_ENDPOINT_URL = os.getenv("BACKUP_S3_ENDPOINT_URL", "")
 
 # Base path for pedidos folders (optional, only for network-attached storage)
 PEDIDOS_BASE_PATH = os.getenv("PEDIDOS_BASE_PATH", r"M:\base de datos de pedidos")
@@ -79,3 +88,48 @@ USERS = {
     "JUM": {"nombre": "Julian Martinez",   "emails": ["julian-martinez@eipsa.es"]},
     "RM":  {"nombre": "Rosa Martin",       "emails": ["rosa-martin@eipsa.es"]},
 }
+
+
+def validate_required_env():
+    """Validate required environment variables on startup.
+
+    Raises RuntimeError in production if critical vars are missing.
+    Logs warnings in development.
+    """
+    issues = []
+
+    # JWT_SECRET is already validated in auth_service.py for production
+    # but we add a dev-mode warning here
+    jwt_secret = os.getenv("JWT_SECRET", "docflow-dev-secret-change-me")
+    if jwt_secret == "docflow-dev-secret-change-me" and ENV != "production":
+        _config_logger.warning("JWT_SECRET using default dev value — set a secure value for production")
+
+    # DATABASE_URL required when using PostgreSQL
+    if STORAGE_BACKEND == "postgres":
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            issues.append("DATABASE_URL is required when STORAGE_BACKEND=postgres")
+
+    # ENCRYPTION_KEY: required in production, warned in development
+    encryption_key = os.getenv("ENCRYPTION_KEY", "")
+    if not encryption_key:
+        if ENV == "production":
+            issues.append(
+                "ENCRYPTION_KEY is required in production. "
+                'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            )
+        else:
+            _config_logger.warning(
+                "ENCRYPTION_KEY not set — sensitive values will be stored in plaintext. "
+                "This is acceptable for development only."
+            )
+
+    # SMTP_PASS: warn if email features will fail
+    if not SMTP_PASS:
+        _config_logger.warning("SMTP_PASS not set — email sending will fail")
+
+    if issues:
+        msg = "Missing required environment variables:\n" + "\n".join(f"  - {i}" for i in issues)
+        raise RuntimeError(msg)
+
+    _config_logger.info("Environment validation passed (env=%s, storage=%s)", ENV, STORAGE_BACKEND)

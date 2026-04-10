@@ -136,6 +136,16 @@ def list_approvals(
     return workflow_service.list_approval_requests(tenant_id, status=status, assigned_to=assigned_to)
 
 
+@router.get("/approvals/my")
+def my_approvals(current_user: dict = Depends(get_current_user)):
+    """Get approval requests assigned to the current user."""
+    tenant_id = current_user.get("tenant_id", 1)
+    _require_workflows(tenant_id)
+    return workflow_service.list_approval_requests(
+        tenant_id, assigned_to=current_user["initials"]
+    )
+
+
 @router.post("/approvals/", status_code=201)
 def create_approval(body: ApprovalCreate, current_user: dict = Depends(get_current_user)):
     tenant_id = current_user.get("tenant_id", 1)
@@ -172,4 +182,17 @@ def comment(request_id: int, body: CommentRequest, current_user: dict = Depends(
     result = workflow_service.add_comment(tenant_id, request_id, current_user["username"], body.text)
     if not result:
         raise HTTPException(status_code=404, detail="Approval request not found")
+    return result
+
+
+@router.post("/approvals/{request_id}/escalate")
+def escalate(request_id: int, body: ResolveRequest, current_user: dict = Depends(get_current_user)):
+    """Escalate a pending approval request."""
+    tenant_id = current_user.get("tenant_id", 1)
+    _require_workflows(tenant_id)
+    result = workflow_service.escalate_request(
+        tenant_id, request_id, current_user["username"], body.comment
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Approval request not found or not pending")
     return result

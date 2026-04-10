@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useI18n } from "../contexts/I18nContext";
 import api from "../services/api";
+import usePolling from "../hooks/usePolling";
 
 const SCurveChart = lazy(() => import("../components/SCurveChart"));
 const TraceabilityMatrix = lazy(() => import("../components/TraceabilityMatrix"));
@@ -74,6 +75,12 @@ export default function ProjectDashboard({ onNavigateToClaims, initialPedido }) 
   useEffect(() => {
     if (initialPedido) load(initialPedido);
   }, [initialPedido, load]);
+
+  // Auto-refresh every 5 minutes when a pedido is selected
+  const refreshProject = useCallback(() => {
+    if (selectedPedido) load(selectedPedido);
+  }, [selectedPedido, load]);
+  usePolling(refreshProject, 300000, { enabled: !!selectedPedido });
 
   const handleSelect = (pedido) => {
     setSelectedPedido(pedido);

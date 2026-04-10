@@ -1,4 +1,4 @@
-"""Workflow and approval request service — tenant-aware CRUD."""
+"""Workflow and approval request service — tenant-aware CRUD + escalation."""
 
 import os
 from datetime import datetime, timezone
@@ -253,6 +253,36 @@ def add_comment(tenant_id: int, request_id: int, by: str, text: str) -> Optional
             "by": by,
             "text": text,
             "action": "comment",
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        req.comments = comments
+        session.commit()
+        session.refresh(req)
+        return _approval_to_dict(req)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def escalate_request(tenant_id: int, request_id: int, by: str, reason: str = "") -> Optional[dict]:
+    """Escalate a pending approval request — marks as 'escalated' and adds comment."""
+    from db.models import ApprovalRequest
+    session = _get_session()
+    try:
+        req = session.query(ApprovalRequest).filter(
+            ApprovalRequest.id == request_id,
+            ApprovalRequest.tenant_id == tenant_id,
+        ).first()
+        if not req or req.status != "pending":
+            return None
+        req.status = "escalated"
+        comments = list(req.comments or [])
+        comments.append({
+            "by": by,
+            "text": reason or "Escalated",
+            "action": "escalated",
             "at": datetime.now(timezone.utc).isoformat(),
         })
         req.comments = comments

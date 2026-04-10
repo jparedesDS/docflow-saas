@@ -7,10 +7,13 @@ import PageHeader from "../components/PageHeader";
 import { ArrowClockwise, DownloadSimple, Copy, CheckCircle, ArrowUUpLeft, PaperPlaneTilt, ClockCountdown, FolderSimple, ArrowSquareOut, ClockCounterClockwise } from "@phosphor-icons/react";
 import ProjectPreviewPopover from "../components/ProjectPreviewPopover";
 import DocTimeline from "../components/DocTimeline";
+import ErrorBanner from "../components/ErrorBanner";
+import EmptyState from "../components/EmptyState";
 import { API_BASE } from "../config";
 import { STATUS_COLORS as STATUS_COLORS_INLINE } from "../constants/status";
 import { diasDesde } from "../utils/dates";
 import { useI18n } from "../contexts/I18nContext";
+import usePolling from "../hooks/usePolling";
 
 /* ═══════════════════════════════════════════════════════
    STATUS GLOBAL + MONITORING REPORT (página unificada)
@@ -33,6 +36,7 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
   const [statusData, setStatusData] = useState([]);
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [expandedDocs, setExpandedDocs] = useState([]);
@@ -53,6 +57,7 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [statusRes, reportRes] = await Promise.all([
         api.get("/documents/monitoring/status-global"),
@@ -62,12 +67,15 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
       setReportData(reportRes);
     } catch (err) {
       console.error("Error cargando datos:", err);
-      showToast("Error al cargar datos", "error");
+      setError(err.response?.data?.detail || t('genericError'));
     }
     setLoading(false);
-  }, []);
+  }, [t]); // eslint-disable-line
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Auto-refresh every 3 minutes
+  usePolling(loadData, 180000);
 
   useEffect(() => {
     return () => {
@@ -274,6 +282,7 @@ export default function StatusGlobal({ canExport = false, onSelectPedido }) {
 
   return (
     <div className="space-y-4">
+      <ErrorBanner error={error} onRetry={loadData} onDismiss={() => setError(null)} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <PageHeader title={t("sgTitle")} description={t("sgDesc")} />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

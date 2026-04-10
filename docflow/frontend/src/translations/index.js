@@ -1133,6 +1133,28 @@ export const translations = {
     fsHistory: "Historial de escaneos",
     fsNoAccess: "Carpeta de red no accesible",
     fsLinkToOrder: "Vincular a pedido",
+
+    // Error handling & Empty states
+    offline: "Sin conexion a internet",
+    genericError: "Error al cargar los datos",
+    noDocuments: "No hay documentos",
+    noDocumentsDesc: "Importa tu primer archivo Excel para comenzar",
+    noEvents: "Sin eventos programados",
+    noEventsDesc: "Crea una reunion o nota para empezar",
+    noReports: "No hay informes programados",
+    noReportsDesc: "Configura un informe automatico",
+    noNotifications: "Sin notificaciones",
+    noNotificationsDesc: "Las notificaciones apareceran aqui cuando haya actividad",
+    noWorkflows: "Sin flujos de trabajo",
+    noWorkflowsDesc: "Crea tu primera automatizacion",
+    noResultsDesc: "Prueba con otros filtros o terminos de busqueda",
+
+    // Validation
+    fieldRequired: "Campo obligatorio",
+    invalidEmail: "Email no v\u00e1lido",
+    minChars: "M\u00ednimo {n} caracteres",
+    maxChars: "M\u00e1ximo {n} caracteres",
+    invalidFormat: "Formato no v\u00e1lido",
   },
   en: {
     // Main navigation (sidebar) — v3.0
@@ -2268,5 +2290,27 @@ export const translations = {
     fsHistory: "Scan history",
     fsNoAccess: "Network folder not accessible",
     fsLinkToOrder: "Link to order",
+
+    // Error handling & Empty states
+    offline: "No internet connection",
+    genericError: "Error loading data",
+    noDocuments: "No documents",
+    noDocumentsDesc: "Import your first Excel file to get started",
+    noEvents: "No scheduled events",
+    noEventsDesc: "Create a meeting or note to get started",
+    noReports: "No scheduled reports",
+    noReportsDesc: "Set up an automated report",
+    noNotifications: "No notifications",
+    noNotificationsDesc: "Notifications will appear here when there is activity",
+    noWorkflows: "No workflows",
+    noWorkflowsDesc: "Create your first automation",
+    noResultsDesc: "Try different filters or search terms",
+
+    // Validation
+    fieldRequired: "Required field",
+    invalidEmail: "Invalid email",
+    minChars: "Minimum {n} characters",
+    maxChars: "Maximum {n} characters",
+    invalidFormat: "Invalid format",
   },
 };

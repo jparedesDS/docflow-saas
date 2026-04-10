@@ -200,6 +200,12 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
               <input
                 ref={inputRef}
                 type="text"
+                role="combobox"
+                aria-expanded={flatResults.length > 0}
+                aria-controls="cp-results-listbox"
+                aria-activedescendant={flatResults.length > 0 ? `cp-result-${selectedIndex}` : undefined}
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -248,6 +254,9 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
             {/* Results area */}
             <div
               ref={resultsRef}
+              id="cp-results-listbox"
+              role="listbox"
+              aria-label={t("cpResults")}
               style={{
                 maxHeight: 400,
                 overflowY: "auto",
@@ -367,6 +376,9 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
                       return (
                         <div
                           key={item.id}
+                          id={`cp-result-${itemGlobalIndex}`}
+                          role="option"
+                          aria-selected={isSelected}
                           data-result-item
                           onClick={() => handleResultClick(item)}
                           onMouseEnter={() => setSelectedIndex(itemGlobalIndex)}

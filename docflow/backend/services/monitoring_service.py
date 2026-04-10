@@ -3,6 +3,7 @@ import math
 from datetime import datetime, date
 from typing import List, Dict, Any
 from repositories.excel_repository import ExcelRepository
+from utils.cache import cache_result
 
 
 class MonitoringService:
@@ -20,6 +21,7 @@ class MonitoringService:
         self.data_repo = data_repo
         self.consulta_repo = consulta_repo
 
+    @cache_result(ttl=60, key_prefix="monitoring")
     def get_monitoring_data(
         self,
         pedido: str = None,
@@ -118,6 +120,7 @@ class MonitoringService:
         # Quitar sufijos tipo -S00, -S01, -s02, -S10, etc.
         return re.sub(r'(?i)-s\d{1,3}$', '', p)
 
+    @cache_result(ttl=120, key_prefix="status_global")
     def get_status_global(self) -> List[Dict[str, Any]]:
         """Agrupa documentos por Nº Pedido (sin suplemento) y calcula métricas de progreso."""
         docs = self.get_monitoring_data()

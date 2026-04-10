@@ -1,9 +1,42 @@
-import React from "react";
+import React, { useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 
 export default function TabBar({ tabs, active, onChange, layoutId = "tab-indicator" }) {
+  const tabListRef = useRef(null);
+
+  const handleKeyDown = useCallback((e) => {
+    const currentIndex = tabs.findIndex(t => t.key === active);
+    let nextIndex = -1;
+
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0;
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      nextIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1;
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      nextIndex = 0;
+    } else if (e.key === "End") {
+      e.preventDefault();
+      nextIndex = tabs.length - 1;
+    }
+
+    if (nextIndex >= 0) {
+      onChange(tabs[nextIndex].key);
+      // Focus the new tab button
+      if (tabListRef.current) {
+        const buttons = tabListRef.current.querySelectorAll('[role="tab"]');
+        if (buttons[nextIndex]) {
+          buttons[nextIndex].focus();
+        }
+      }
+    }
+  }, [tabs, active, onChange]);
+
   return (
     <div
+      ref={tabListRef}
       role="tablist"
       style={{
         display: "flex",
@@ -11,6 +44,7 @@ export default function TabBar({ tabs, active, onChange, layoutId = "tab-indicat
         borderBottom: "1px solid var(--border)",
         position: "relative",
       }}
+      onKeyDown={handleKeyDown}
     >
       {tabs.map((tab) => {
         const isActive = active === tab.key;
@@ -20,6 +54,9 @@ export default function TabBar({ tabs, active, onChange, layoutId = "tab-indicat
             <button
               role="tab"
               aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              id={`tab-${layoutId}-${tab.key}`}
+              aria-controls={`tabpanel-${layoutId}-${tab.key}`}
               onClick={() => onChange(tab.key)}
               style={{
                 display: "inline-flex",

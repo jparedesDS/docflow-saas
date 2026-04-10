@@ -28,7 +28,12 @@ def encrypt_value(plaintext: str) -> str:
     """Encrypt a plaintext string. Returns ciphertext or plaintext if no key."""
     f = _get_fernet()
     if f is None:
-        logger.warning("ENCRYPTION_KEY not set — storing value in plaintext")
+        env = os.getenv("ENV", "development")
+        if env == "production":
+            raise RuntimeError(
+                "ENCRYPTION_KEY is required in production — cannot store sensitive values in plaintext"
+            )
+        logger.warning("ENCRYPTION_KEY not set — storing value in plaintext (dev mode)")
         return plaintext
     return f.encrypt(plaintext.encode()).decode()
 

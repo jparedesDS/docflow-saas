@@ -5,6 +5,10 @@ from services.document_service import DocumentService
 from services.monitoring_service import MonitoringService
 from repositories.instances import data_repo, consulta_repo
 from utils.auth_middleware import get_current_user, require_scope, SCOPE_WRITE
+from models.document import (
+    DocumentCreate as DocumentCreateSchema,
+    DocumentUpdate as DocumentUpdateSchema,
+)
 
 logger = structlog.get_logger("docflow.routers.documents")
 
@@ -21,11 +25,20 @@ def get_monitoring(
     estado: Optional[str] = Query(None),
     responsable: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=200),
 ):
     """Vista monitoring: merge data_erp + consulta_erp con columnas calculadas."""
-    return monitoring_service.get_monitoring_data(
+    data = monitoring_service.get_monitoring_data(
         pedido=pedido, cliente=cliente, estado=estado, responsable=responsable, query=q
     )
+    if page is not None:
+        ps = page_size or 50
+        total = len(data)
+        pages = max(1, (total + ps - 1) // ps)
+        start = (page - 1) * ps
+        return {"items": data[start:start + ps], "total": total, "page": page, "page_size": ps, "pages": pages}
+    return data
 
 
 @router.get("/monitoring/status-global")
@@ -40,8 +53,13 @@ def get_monitoring_columns():
     return monitoring_service.get_monitoring_columns()
 
 
-@router.get("/", response_model=List[Dict[str, Any]])
-def list_documents():
+@router.get("/")
+def list_documents(
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=200),
+):
+    if page is not None:
+        return service.list_paginated(page, page_size or 50)
     return service.list_all()
 
 
@@ -70,25 +88,49 @@ def get_document(doc_id: str):
     return doc
 
 
-@router.post("/")
-def create_document(data: Dict[str, Any], current_user: dict = Depends(require_scope(SCOPE_WRITE))):
+def _create_side_effects(result: dict, current_user: dict):
+    """Audit log + workflow trigger after document creation."""
+    tenant_id = current_user.get("tenant_id", 1)
+    doc_id = result.get("Nº Doc. EIPSA", "") if isinstance(result, dict) else ""
+    from services.audit_service import log_change
+    log_change(
+        tenant_id=tenant_id,
+        entity_type="document",
+        entity_id=doc_id,
+        action="created",
+        user_initials=current_user.get("initials", ""),
+        user_name=current_user.get("username", ""),
+    )
+    from services.workflow_engine import on_event
+    on_event(tenant_id, "document_received", {"document_ref": doc_id, "document": result})
+
+
+@router.post("/validated", status_code=201)
+def create_document_validated(
+    body: DocumentCreateSchema,
+    current_user: dict = Depends(require_scope(SCOPE_WRITE)),
+):
+    """Create a document with strict Pydantic schema validation."""
+    data = body.model_dump(by_alias=True, exclude_none=True)
     result = service.create(data)
     try:
-        tenant_id = current_user.get("tenant_id", 1)
-        doc_id = result.get("Nº Doc. EIPSA", "") if isinstance(result, dict) else ""
-        from services.audit_service import log_change
-        log_change(
-            tenant_id=tenant_id,
-            entity_type="document",
-            entity_id=doc_id,
-            action="created",
-            user_initials=current_user.get("initials", ""),
-            user_name=current_user.get("username", ""),
-        )
-        from services.workflow_engine import on_event
-        on_event(tenant_id, "document_received", {"document_ref": doc_id, "document": result})
+        _create_side_effects(result, current_user)
     except Exception as exc:
-        logger.warning("create_document_side_effects_failed", doc_id=doc_id, error=str(exc))
+        logger.warning("create_document_side_effects_failed", error=str(exc))
+    return result
+
+
+@router.post("/")
+def create_document(data: Dict[str, Any], current_user: dict = Depends(require_scope(SCOPE_WRITE))):
+    if not data.get("Nº Doc. EIPSA") and not data.get("doc_eipsa"):
+        raise HTTPException(status_code=422, detail="Nº Doc. EIPSA is required")
+    if not data.get("Título") and not data.get("titulo"):
+        raise HTTPException(status_code=422, detail="Título is required")
+    result = service.create(data)
+    try:
+        _create_side_effects(result, current_user)
+    except Exception as exc:
+        logger.warning("create_document_side_effects_failed", error=str(exc))
     return result
 
 
@@ -226,3 +268,13 @@ async def upload_document(
         )
 
     return {"filename": file.filename, "size": len(content), "status": "uploaded"}
+
+
+@router.post("/cache/invalidate")
+def invalidate_cache(current_user: dict = Depends(require_scope(SCOPE_WRITE))):
+    """Invalidate all document-related caches (admin only)."""
+    if current_user.get("role") not in ("admin", "superadmin", "dc"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from utils.cache import invalidate_all
+    invalidate_all()
+    return {"detail": "Cache invalidated"}

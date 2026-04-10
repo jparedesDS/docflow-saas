@@ -28,3 +28,18 @@ class BaseRepository(ABC):
     @abstractmethod
     def delete(self, doc_id: str) -> bool:
         pass
+
+    def get_paginated(self, page: int = 1, page_size: int = 50, **filters) -> dict:
+        """Get paginated results. Default implementation uses get_all + slicing."""
+        all_items = self.filter(**filters) if filters else self.get_all()
+        total = len(all_items)
+        pages = max(1, (total + page_size - 1) // page_size)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return {
+            "items": all_items[start:end],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": pages,
+        }

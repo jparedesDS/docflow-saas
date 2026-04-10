@@ -89,6 +89,17 @@ def run_backup() -> dict:
         }
         logger.info("Backup completado: %s (%d archivos, %d bytes)", dest_folder, len(copied), size)
 
+        # Optional S3 cloud backup
+        from services.cloud_backup_service import is_configured, upload_directory
+        if is_configured():
+            try:
+                s3_result = upload_directory(dest_folder)
+                logger.info("cloud_backup_result: %s", s3_result)
+                _last_status["cloud_backup"] = s3_result
+            except Exception as exc:
+                logger.warning("cloud_backup_failed: %s", str(exc))
+                _last_status["cloud_backup"] = {"status": "error", "error": str(exc)}
+
     except Exception as e:
         logger.exception("Error en backup")
         _last_status = {

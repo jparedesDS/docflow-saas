@@ -19,6 +19,7 @@ import { useI18n } from "./contexts/I18nContext";
 import { useTenant } from "./contexts/TenantContext";
 import { timeAgo } from "./utils/dates";
 import { TOOLS_CONFIG } from "./constants/tools";
+import NetworkIndicator from "./components/NetworkIndicator";
 
 /* ── Lazy-loaded pages ───────────────────────────────── */
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -574,6 +575,8 @@ export default function App() {
 
   return (
     <div className="min-h-[100dvh] flex text-text-main" style={{ background: "var(--bg-page)" }}>
+      <NetworkIndicator />
+
       {/* ── Sidebar ── */}
       <motion.aside
         animate={{ width: sidebarOpen ? 240 : 64 }}

@@ -7,6 +7,7 @@ import bcrypt
 from jose import JWTError, jwt
 
 JWT_SECRET = os.getenv("JWT_SECRET", "docflow-dev-secret-change-me")
+JWT_SECRET_PREVIOUS = os.getenv("JWT_SECRET_PREVIOUS", "")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 REFRESH_TOKEN_EXPIRE_HOURS = 168  # 7 days
@@ -66,14 +67,24 @@ def create_refresh_token(user_data: dict) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def _verify_with_fallback(token: str) -> dict:
+    """Verify token with primary key, falling back to previous key during rotation."""
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        if JWT_SECRET_PREVIOUS:
+            return jwt.decode(token, JWT_SECRET_PREVIOUS, algorithms=[JWT_ALGORITHM])
+        raise
+
+
 def verify_token(token: str) -> dict:
     """Verify and decode a JWT token. Raises JWTError on failure."""
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    return _verify_with_fallback(token)
 
 
 def verify_refresh_token(token: str) -> dict:
     """Verify a refresh token. Raises JWTError if invalid or wrong type."""
-    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    payload = _verify_with_fallback(token)
     if payload.get("type") != "refresh":
         raise JWTError("Not a refresh token")
     return payload

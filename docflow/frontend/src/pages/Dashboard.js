@@ -1,22 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
 import {
-  Briefcase, FolderOpen, Toolbox, Database,
+  Briefcase, FolderOpen, Toolbox, Database, Bell,
   CheckCircle as HealthCheck, XCircle, ArrowClockwise, Warning,
 } from "@phosphor-icons/react";
 import api from "../services/api";
 import KpiCard from "../components/ui/KpiCard";
 import SectionTitle from "../components/ui/SectionTitle";
 import SkeletonCard from "../components/SkeletonCard";
+import ErrorBanner from "../components/ErrorBanner";
+import EmptyState from "../components/EmptyState";
 import { useI18n } from "../contexts/I18nContext";
 import { useTheme } from "../contexts/ThemeContext";
 import TopLoadingBar from "../components/TopLoadingBar";
 import AnomalyAlerts from "../components/AnomalyAlerts";
 import { DASHBOARD_COLORS as STATUS_COLORS } from "../constants/status";
 import { timeAgo } from "../utils/dates";
+import usePolling from "../hooks/usePolling";
 
 export default function Dashboard({ onNavigate }) {
   const { t } = useI18n();
@@ -29,8 +32,9 @@ export default function Dashboard({ onNavigate }) {
   const [atRisk, setAtRisk] = useState([]);
   const [anomalyData, setAnomalyData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     Promise.allSettled([
       api.get("/reports/monitoring-report"),
       api.get("/analytics/summary"),
@@ -43,9 +47,17 @@ export default function Dashboard({ onNavigate }) {
       if (notRes.status === "fulfilled") setNotifications(notRes.value.data);
       if (riskRes.status === "fulfilled") setAtRisk(riskRes.value.data || []);
       if (anomRes.status === "fulfilled") setAnomalyData(anomRes.value.data);
+      // If all critical calls failed, show error
+      const allFailed = [monRes, anaRes].every(r => r.status === "rejected");
+      if (allFailed) setError(t('genericError'));
       setLoading(false);
     });
-  }, []);
+  }, []); // eslint-disable-line
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Auto-refresh every 5 minutes
+  usePolling(loadData, 300000);
 
   if (loading) {
     return (
@@ -94,6 +106,9 @@ export default function Dashboard({ onNavigate }) {
       animate={{ opacity: 1 }}
       className="space-y-5"
     >
+      {/* Error banner */}
+      <ErrorBanner error={error} onRetry={loadData} onDismiss={() => setError(null)} />
+
       {/* Row 1: Welcome banner */}
       <div className="card" style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
@@ -207,7 +222,7 @@ export default function Dashboard({ onNavigate }) {
               })}
             </div>
           ) : (
-            <p className="text-center py-8 text-sm text-text-muted">{t("noData")}</p>
+            <EmptyState icon={Bell} title={t("noNotifications")} description={t("noNotificationsDesc")} />
           )}
         </div>
       </div>
@@ -293,7 +308,6 @@ export default function Dashboard({ onNavigate }) {
                     borderBottom: i < atRisk.length - 1 ? "1px solid var(--border)" : "none",
                   }}
                 >
-                  {/* Risk score badge */}
                   <div style={{
                     width: 36, height: 36, borderRadius: 8, flexShrink: 0,
                     background: `${scoreColor}14`,
@@ -302,7 +316,6 @@ export default function Dashboard({ onNavigate }) {
                   }}>
                     {doc.risk_score}
                   </div>
-                  {/* Doc info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p className="text-text-main" style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {doc.doc_eipsa} — {doc.titulo || doc.cliente}
@@ -311,7 +324,6 @@ export default function Dashboard({ onNavigate }) {
                       {doc.reasons[0]}
                     </p>
                   </div>
-                  {/* Status */}
                   <span className="text-text-muted" style={{ fontSize: 10, flexShrink: 0, fontWeight: 600 }}>
                     {doc.estado || t("sin_enviar")}
                   </span>
@@ -329,7 +341,7 @@ export default function Dashboard({ onNavigate }) {
 
       {/* Row 5: Quick access + System health */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {/* Quick access — clickable */}
+        {/* Quick access */}
         <div className="card p-5">
           <SectionTitle>{t("quickAccess")}</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -373,15 +385,15 @@ export default function Dashboard({ onNavigate }) {
   );
 }
 
-/* ── System health widget ── */
+/* -- System health widget -- */
 function SystemHealthWidget() {
   const { t } = useI18n();
   const [health, setHealth] = useState(null);
   const [polling, setPolling] = useState(null);
 
   useEffect(() => {
-    api.get("/health/").then(r => setHealth(r.data)).catch(() => {});
-    api.get("/polling/status").then(r => setPolling(r.data)).catch(() => {});
+    api.get("/health/").then(r => setHealth(r.data)).catch(() => setHealth({ status: "error" }));
+    api.get("/polling/status").then(r => setPolling(r.data)).catch(() => setPolling({ error: true }));
   }, []);
 
   const HealthRow = ({ label, ok, detail }) => (
@@ -402,9 +414,9 @@ function SystemHealthWidget() {
         </div>
       ) : (
         <div>
-          <HealthRow label="API" ok={health.status === "ok"} detail={health.uptime || "—"} />
+          <HealthRow label="API" ok={health.status === "ok"} detail={health.uptime || "\u2014"} />
           <HealthRow label="Polling IMAP" ok={!!polling && !polling.error} detail={polling?.last_run || t("never")} />
-          <HealthRow label="Archivos Excel" ok={health.status === "ok"} detail={health.excel_files ? `${Object.keys(health.excel_files).length} archivos` : "—"} />
+          <HealthRow label="Archivos Excel" ok={health.status === "ok"} detail={health.excel_files ? `${Object.keys(health.excel_files).length} archivos` : "\u2014"} />
         </div>
       )}
     </div>

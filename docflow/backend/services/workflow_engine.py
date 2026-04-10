@@ -173,43 +173,51 @@ def _action_create_approval(action: dict, data: dict, tenant_id: int) -> dict:
 
 
 def _action_change_status(action: dict, data: dict, tenant_id: int) -> dict:
-    """Log the intended status change. Does not modify data directly — caller decides."""
+    """Change document status via document_service."""
     new_status = action.get("new_status", "")
     document_ref = data.get("document_ref", "")
-    logger.info(
-        "workflow_change_status",
-        tenant_id=tenant_id,
-        document_ref=document_ref,
-        new_status=new_status,
-    )
+    if not new_status or not document_ref:
+        return {"action": "change_status", "applied": False, "reason": "missing new_status or document_ref"}
+
+    from repositories.instances import data_repo
+    from services.document_service import DocumentService
+    svc = DocumentService(data_repo)
+    result = svc.update(document_ref, {"Estado": new_status})
+
+    logger.info("workflow_change_status", document_ref=document_ref, new_status=new_status, applied=bool(result))
     return {
         "action": "change_status",
         "document_ref": document_ref,
         "new_status": new_status,
-        "applied": False,  # Caller must apply the change
+        "applied": bool(result),
     }
 
 
 def _action_send_email(action: dict, data: dict, tenant_id: int) -> dict:
-    """Log the email action. Actual sending requires SMTP configuration."""
+    """Send email via SMTP service."""
     to = action.get("to", "")
     subject = action.get("subject", "Workflow notification")
+    body = action.get("body", "")
 
     # Substitute placeholders
     for key, val in data.items():
         subject = subject.replace(f"{{{{{key}}}}}", str(val))
+        body = body.replace(f"{{{{{key}}}}}", str(val))
         if isinstance(to, str):
             to = to.replace(f"{{{{{key}}}}}", str(val))
 
-    logger.info(
-        "workflow_send_email",
-        tenant_id=tenant_id,
-        to=to,
-        subject=subject,
-    )
-    return {
-        "action": "send_email",
-        "to": to,
-        "subject": subject,
-        "sent": False,  # Actual send requires SMTP config
-    }
+    recipients = [r.strip() for r in to.split(",") if r.strip()] if isinstance(to, str) else to
+
+    if not recipients:
+        return {"action": "send_email", "sent": False, "reason": "no recipients"}
+
+    try:
+        from services.smtp_service import send_html_email
+        html_body = f"<div style='font-family:Arial;padding:20px'>{body or subject}</div>"
+        send_html_email(to=recipients, cc=[], subject=subject, html_body=html_body)
+        sent = True
+    except Exception as exc:
+        logger.warning("workflow_email_failed", to=recipients, error=str(exc))
+        sent = False
+
+    return {"action": "send_email", "to": recipients, "subject": subject, "sent": sent}

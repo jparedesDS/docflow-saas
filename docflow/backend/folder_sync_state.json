@@ -272,8 +272,8 @@
     },
     "M:\\base de datos de pedidos\\Año 2013\\2013 Pedidos Almacen\\PEDIDOS ALMACEN.xls": {
       "name": "PEDIDOS ALMACEN.xls",
-      "size": 2570752,
-      "mtime": "2026-03-23T09:33:14.580865+00:00",
+      "size": 2555392,
+      "mtime": "2026-03-25T14:44:57.552269+00:00",
       "extension": ".xls"
     },
     "M:\\base de datos de pedidos\\Año 2014\\EIPSA P142946.doc": {
@@ -1112,10 +1112,108 @@
       "new_files": 100,
       "modified_files": 0,
       "error": null
+    },
+    {
+      "scan_time": "2026-03-23T15:19:33.520492+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 1,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-23T15:49:33.520493+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T10:27:10.928769+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 1,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T10:57:10.928432+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 1,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T11:27:10.927684+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T11:57:10.928269+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T12:27:10.928636+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T12:57:10.928109+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T13:27:10.928074+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T13:57:10.928275+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T14:27:10.928267+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 1,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T14:57:10.928882+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 1,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T15:27:10.928399+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
+    },
+    {
+      "scan_time": "2026-03-25T15:57:10.928919+00:00",
+      "total_scanned": 184,
+      "new_files": 0,
+      "modified_files": 0,
+      "error": null
     }
   ],
-  "last_scan": "2026-03-23T14:19:35.764598+00:00",
-  "last_new_count": 184,
+  "last_scan": "2026-03-25T15:57:10.928919+00:00",
+  "last_new_count": 0,
   "last_modified_count": 0,
   "last_total": 184
 }

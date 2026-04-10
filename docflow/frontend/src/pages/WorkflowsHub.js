@@ -5,6 +5,9 @@ import api from "../services/api";
 import { useI18n } from "../contexts/I18nContext";
 import { useTenant } from "../contexts/TenantContext";
 import { useToast } from "../contexts/ToastContext";
+import ErrorBanner from "../components/ErrorBanner";
+import EmptyState from "../components/EmptyState";
+import usePolling from "../hooks/usePolling";
 
 export default function WorkflowsHub({ onTabChange }) {
   const { t } = useI18n();
@@ -405,6 +408,9 @@ function ApprovalsSection() {
   }, [filter]);
 
   useEffect(() => { fetchApprovals(); }, [fetchApprovals]);
+
+  // Auto-refresh approvals every 2 minutes
+  usePolling(fetchApprovals, 120000);
 
   const handleResolve = (id, action) => {
     setCommentModal({ id, action });
