@@ -109,3 +109,19 @@ email-best-practices/
 # Scripts de diagnóstico/test locales
 docflow/backend/diagnose_*.py
 docflow/backend/test_*.py
+
+# Documentación temporal / diagnósticos / checklists (raíz)
+/ARCHIVOS_CREADOS.md
+/ARQUITECTURA_GAIA.txt
+/CHECKLIST_IMPLEMENTACION.md
+/DIAGNOSTICO_GAIA_TNEF.md
+/IMPLEMENTACION_LISTA.txt
+/INDEX.md
+/QUICK_START.txt
+/README_GAIA_DIAGNOSTICO.md
+/RESUMEN_EJECUTIVO.txt
+/SOLUCION_GAIA_TNEF.md
+/docs/
+
+# Mantener solo README.md en raíz
+# (requirements.txt y docflow/prompts/ son funcionales)
