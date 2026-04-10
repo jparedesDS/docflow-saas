@@ -1,3 +1,7 @@
+# ===========================================
+# DocFlow — .gitignore
+# ===========================================
+
 # Entorno virtual Python
 docflow_env/
 venv/
@@ -31,25 +35,40 @@ docusign_private.pem
 .vscode/
 *.swp
 *.swo
+
+# Claude Code
 .claude/
 
 # Logs y datos generados en runtime
 *.log
+docflow/backend/logs/
+
+# Runtime state JSON (auto-generados por la app)
 docflow/backend/notifications_log.json
 docflow/backend/processed_emails.json
 docflow/backend/agenda_data.json
 docflow/backend/claims_log.json
+docflow/backend/polling_status.json
+docflow/backend/scheduled_reports.json
+docflow/backend/folder_sync_state.json
+docflow/backend/response_templates.json
 
-# Datos reales de empresa (nunca subir)
+# File locks (json_store.py)
+*.json.lock
+
+# Auth data (hashes bcrypt)
+docflow/backend/users.json
+
+# Datos reales de empresa (PII, nunca subir)
 *.xlsx
 *.xls
 data_tags.xlsx
+identificationm.txt
 
 # Emails descargados / archivos temporales
 *.msg
 *.htm
 *_archivos/
-"RE RECLAIMS*"
 
 # Scripts de utilidad locales
 read_tags.py
@@ -69,29 +88,19 @@ desktop.ini
 htmlcov/
 .tox/
 
-# Node (si el frontend usa npm)
+# Node
 node_modules/
 npm-debug.log*
 
-# File locks (json_store.py)
-*.json.lock
-
-# Runtime state JSON adicional
-docflow/backend/polling_status.json
-docflow/backend/scheduled_reports.json
-
-# Auth data (hashes bcrypt)
-docflow/backend/users.json
+# Alembic cache
+docflow/backend/alembic/__pycache__/
+docflow/backend/alembic/versions/__pycache__/
 
 # Archivo temporal de desarrollo
 docflow/backend/services/_temp_monthly.py
 
 # Config local MCP
 .mcp.json
-
-# Alembic auto-generated migration cache
-docflow/backend/alembic/__pycache__/
-docflow/backend/alembic/versions/__pycache__/
 
 # Repos externos clonados en el directorio
 taste-skill/
