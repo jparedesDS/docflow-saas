@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, PencilSimple, Trash, MagnifyingGlass,
   CalendarBlank, Clock, MapPin, User, Robot,
   FileText, CheckCircle, ArrowClockwise, ListChecks,
+  Check, CaretDown, CaretRight, ArrowsClockwise,
+  SunHorizon,
 } from "@phosphor-icons/react";
 import { useI18n } from "../contexts/I18nContext";
 import { useToast } from "../contexts/ToastContext";
@@ -15,6 +17,8 @@ import api from "../services/api";
 import { formatDate, daysUntil } from "../utils/dates";
 import SimpleMarkdown from "../components/SimpleMarkdown";
 
+/* ── Constants ── */
+
 const NOTE_COLORS = [
   { key: "default", bg: "var(--bg-card)", label: "Default" },
   { key: "blue",    bg: "#1E3A5F",        label: "Azul" },
@@ -23,33 +27,123 @@ const NOTE_COLORS = [
   { key: "rose",    bg: "#4C0519",        label: "Rosa" },
 ];
 
-const PRIORIDAD_COLORS = {
-  alta:  { bg: "#DC2626", text: "#FFF" },
-  media: { bg: "#D97706", text: "#FFF" },
-  baja:  { bg: "#16A34A", text: "#FFF" },
+/* ── Document status extracted from task description ── */
+const DOC_STATUS_COLORS = {
+  "sin enviar":   { bg: "#64748B20", fg: "#64748B" },
+  "enviado":      { bg: "#4F46E520", fg: "#4F46E5" },
+  "aprobado":     { bg: "#16A34A20", fg: "#16A34A" },
+  "rechazado":    { bg: "#DC262620", fg: "#DC2626" },
+  "com. menores": { bg: "#D9770620", fg: "#D97706" },
+  "com. mayores": { bg: "#DB277720", fg: "#DB2777" },
+  "comentado":    { bg: "#D9770620", fg: "#D97706" },
 };
 
-const ESTADO_COLS = ["pendiente", "en_progreso", "completada"];
+function extractDocStatus(tarea) {
+  const desc = tarea.descripcion || "";
+  const match = desc.match(/Estado:\s*(.+?)$/i);
+  if (match) {
+    const raw = match[1].trim().toLowerCase();
+    return { label: match[1].trim() || "Sin Enviar", colors: DOC_STATUS_COLORS[raw] || DOC_STATUS_COLORS["sin enviar"] };
+  }
+  return null;
+}
+
+function extractPedido(tarea) {
+  const desc = tarea.descripcion || "";
+  const match = desc.match(/Pedido\s+(\S+)/i);
+  return match ? match[1] : null;
+}
+
+/* ── Helpers ── */
+
 function getEstadoLabels(t) {
-  return { pendiente: t('agStatusPending'), en_progreso: t('agStatusInProgress'), completada: t('agStatusCompleted') };
+  return {
+    pendiente: t("agStatusPending") || "Pendiente",
+    en_progreso: t("agStatusInProgress") || "En progreso",
+    completada: t("agStatusCompleted") || "Completada",
+  };
+}
+
+function isSameDay(dateStr, refDate) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  return (
+    d.getFullYear() === refDate.getFullYear() &&
+    d.getMonth() === refDate.getMonth() &&
+    d.getDate() === refDate.getDate()
+  );
+}
+
+function isThisWeek(dateStr, today) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  const todayCopy = new Date(today);
+  todayCopy.setHours(0, 0, 0, 0);
+  const dayOfWeek = todayCopy.getDay() || 7; // Monday = 1
+  const endOfWeek = new Date(todayCopy);
+  endOfWeek.setDate(todayCopy.getDate() + (7 - dayOfWeek));
+  return d > todayCopy && d <= endOfWeek;
+}
+
+function isNextWeek(dateStr, today) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  const todayCopy = new Date(today);
+  todayCopy.setHours(0, 0, 0, 0);
+  const dayOfWeek = todayCopy.getDay() || 7;
+  const startNextWeek = new Date(todayCopy);
+  startNextWeek.setDate(todayCopy.getDate() + (8 - dayOfWeek));
+  const endNextWeek = new Date(startNextWeek);
+  endNextWeek.setDate(startNextWeek.getDate() + 6);
+  return d >= startNextWeek && d <= endNextWeek;
+}
+
+function formatDateLong(date) {
+  const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const months = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+  ];
+  return `${days[date.getDay()]}, ${date.getDate()} de ${months[date.getMonth()]}`;
+}
+
+const STATUS_URGENCY = { "rechazado": 0, "com. mayores": 1, "comentado": 2, "com. menores": 3, "sin enviar": 4, "": 5 };
+
+function sortTasksByUrgency(tasks) {
+  return [...tasks].sort((a, b) => {
+    const overA = daysUntil(a.fecha_limite);
+    const overB = daysUntil(b.fecha_limite);
+    const isOverA = overA !== null && overA < 0 && a.estado !== "completada";
+    const isOverB = overB !== null && overB < 0 && b.estado !== "completada";
+    if (isOverA && !isOverB) return -1;
+    if (!isOverA && isOverB) return 1;
+    const sa = extractDocStatus(a);
+    const sb = extractDocStatus(b);
+    const ua = STATUS_URGENCY[sa?.label?.toLowerCase() || ""] ?? 5;
+    const ub = STATUS_URGENCY[sb?.label?.toLowerCase() || ""] ?? 5;
+    return ua - ub;
+  });
 }
 
 
-// ─────────────────────────── ACTA VIEW MODAL ───────────────────────────
+/* ══════════════════════════════════════════════════════════════════════
+   ACTA VIEW MODAL
+   ══════════════════════════════════════════════════════════════════════ */
+
 function ActaView({ reunion, onClose, onCreateTasks, t }) {
   const acta = reunion.acta || "";
   const decisiones = reunion.decisiones || [];
   const acciones = reunion.acciones || [];
 
   return (
-    <Modal title={t("mmMinutes") || "Acta de reunion"} onClose={onClose} maxWidth={720}>
+    <Modal title={t("mmMinutes") || "Acta de reunión"} onClose={onClose} maxWidth={720}>
       <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
-        {/* Acta markdown */}
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <SimpleMarkdown text={acta} />
         </div>
 
-        {/* Decisiones */}
         {decisiones.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <h3 className="text-text-main" style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
@@ -66,7 +160,6 @@ function ActaView({ reunion, onClose, onCreateTasks, t }) {
           </div>
         )}
 
-        {/* Acciones */}
         {acciones.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <h3 className="text-text-main" style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
@@ -77,7 +170,7 @@ function ActaView({ reunion, onClose, onCreateTasks, t }) {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "var(--bg-page)" }}>
-                    <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Accion</th>
+                    <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Acción</th>
                     <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Asignado</th>
                     <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Fecha</th>
                     <th className="text-text-muted" style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Prioridad</th>
@@ -104,7 +197,6 @@ function ActaView({ reunion, onClose, onCreateTasks, t }) {
         )}
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2 justify-end mt-4">
         {acciones.length > 0 && (
           <Button icon={ListChecks} onClick={() => onCreateTasks(acciones)}>
@@ -117,7 +209,1124 @@ function ActaView({ reunion, onClose, onCreateTasks, t }) {
   );
 }
 
-// ─────────────────────────── TAB NOTAS ───────────────────────────
+
+/* ══════════════════════════════════════════════════════════════════════
+   TAB: HOY (Today unified view)
+   ══════════════════════════════════════════════════════════════════════ */
+
+function TodaySummaryBar({ todayMeetings, pendingTasks, overdueTasks }) {
+  const today = new Date();
+  const dateStr = formatDateLong(today);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        padding: "12px 16px",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        marginBottom: 24,
+        flexWrap: "wrap",
+      }}
+    >
+      <div className="flex items-center gap-2" style={{ flex: 1, minWidth: 200 }}>
+        <SunHorizon size={20} weight="bold" style={{ color: "#D97706" }} />
+        <span className="text-text-main" style={{ fontWeight: 700, fontSize: 15 }}>
+          {dateStr}
+        </span>
+      </div>
+      <div className="flex items-center gap-4" style={{ flexWrap: "wrap" }}>
+        <span className="text-text-sub" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+          <CalendarBlank size={13} />
+          <strong style={{ color: "#4F46E5" }}>{todayMeetings}</strong> reuniones
+        </span>
+        <span className="text-text-sub" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+          <ListChecks size={13} />
+          <strong style={{ color: "#D97706" }}>{pendingTasks}</strong> pendientes
+        </span>
+        {overdueTasks > 0 && (
+          <span style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, color: "#DC2626" }}>
+            <Clock size={13} />
+            <strong>{overdueTasks}</strong> vencidas
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TodayTimeline({ meetings, onNavigateToMeeting }) {
+  if (meetings.length === 0) {
+    return (
+      <div className="text-text-muted" style={{ fontSize: 13, padding: "16px 0", textAlign: "center" }}>
+        <CalendarBlank size={24} weight="thin" style={{ display: "inline-block", marginBottom: 4 }} />
+        <div>Sin reuniones hoy</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {meetings.map((m, i) => (
+        <div
+          key={m.id}
+          onClick={() => onNavigateToMeeting(m)}
+          style={{
+            display: "flex",
+            gap: 12,
+            cursor: "pointer",
+            padding: "10px 0",
+            borderBottom: i < meetings.length - 1 ? "1px solid var(--border)" : "none",
+            transition: "background 0.15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-page)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+        >
+          {/* Time column */}
+          <div style={{ width: 52, flexShrink: 0, textAlign: "right", paddingRight: 12, position: "relative" }}>
+            <span className="text-text-muted" style={{ fontSize: 12, fontWeight: 600, fontFamily: "monospace" }}>
+              {m.hora_inicio || "--:--"}
+            </span>
+            {/* Vertical line */}
+            <div style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 2,
+              background: "#4F46E5",
+              borderRadius: 1,
+            }} />
+            {/* Dot */}
+            <div style={{
+              position: "absolute",
+              right: -3,
+              top: 14,
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "#4F46E5",
+              border: "2px solid var(--bg-card)",
+            }} />
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="text-text-main" style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>
+              {m.titulo}
+            </p>
+            <div className="flex items-center gap-3 flex-wrap" style={{ marginTop: 3 }}>
+              {m.hora_fin && (
+                <span className="text-text-muted" style={{ fontSize: 11 }}>
+                  {m.hora_inicio} - {m.hora_fin}
+                </span>
+              )}
+              {m.ubicacion && (
+                <span className="text-text-muted" style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
+                  <MapPin size={10} /> {m.ubicacion}
+                </span>
+              )}
+              {m.asistentes?.length > 0 && (
+                <span className="text-text-muted" style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
+                  <User size={10} /> {m.asistentes.length} asistentes
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TodayTaskChecklist({ tasks, onToggle }) {
+  if (tasks.length === 0) {
+    return (
+      <div className="text-text-muted" style={{ fontSize: 13, padding: "16px 0", textAlign: "center" }}>
+        <Check size={24} weight="thin" style={{ display: "inline-block", marginBottom: 4 }} />
+        <div>Todo completado</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {tasks.map((task, i) => {
+        const docStatus = extractDocStatus(task);
+        const pedido = extractPedido(task);
+        const days = daysUntil(task.fecha_limite);
+        const overdue = days !== null && days < 0 && task.estado !== "completada";
+        const completed = task.estado === "completada";
+
+        return (
+          <div
+            key={task.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 4px",
+              borderBottom: i < tasks.length - 1 ? "1px solid var(--border)" : "none",
+            }}
+          >
+            {/* Checkbox */}
+            <button
+              onClick={() => onToggle(task)}
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                border: completed ? "none" : "2px solid var(--border)",
+                background: completed ? "#16A34A" : "transparent",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                transition: "all 0.15s",
+              }}
+            >
+              {completed && <Check size={12} weight="bold" style={{ color: "#FFF" }} />}
+            </button>
+
+            {/* Title */}
+            <span
+              className="text-text-main"
+              style={{
+                flex: 1,
+                fontSize: 13,
+                fontWeight: 500,
+                textDecoration: completed ? "line-through" : "none",
+                opacity: completed ? 0.5 : 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {task.titulo}
+            </span>
+
+            {/* Document status badge (reason why it's pending) */}
+            {docStatus && (
+              <span style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 999,
+                background: docStatus.colors.bg,
+                color: docStatus.colors.fg,
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+              }}>
+                {docStatus.label}
+              </span>
+            )}
+
+            {/* Pedido */}
+            {pedido && (
+              <span className="text-text-muted" style={{ fontSize: 10, flexShrink: 0, whiteSpace: "nowrap" }}>
+                {pedido}
+              </span>
+            )}
+
+            {/* Due date */}
+            {task.fecha_limite && (
+              <span style={{
+                fontSize: 11,
+                color: overdue ? "#DC2626" : "var(--text-muted)",
+                fontWeight: overdue ? 600 : 400,
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+              }}>
+                {formatDate(task.fecha_limite)}
+                {overdue && " · Vencida"}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function QuickAddTask({ onAdd }) {
+  const [value, setValue] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!value.trim() || adding) return;
+    setAdding(true);
+    try {
+      await onAdd(value.trim());
+      setValue("");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ marginTop: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          background: "var(--bg-card)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          transition: "border-color 0.15s",
+        }}
+      >
+        <Plus size={16} weight="bold" style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+        <input
+          type="text"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          placeholder="Añadir tarea rápida..."
+          disabled={adding}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            fontSize: 13,
+            color: "var(--text-main)",
+            fontFamily: "Inter, sans-serif",
+          }}
+        />
+        {value.trim() && (
+          <span className="text-text-muted" style={{ fontSize: 10, flexShrink: 0 }}>
+            ↵ Enter
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function TabHoy({ tareas, reuniones, owner, onSetTab, onToggleTask, onQuickAddTask, compact }) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayMeetings = useMemo(() => {
+    return reuniones
+      .filter(r => isSameDay(r.fecha, today))
+      .sort((a, b) => (a.hora_inicio || "").localeCompare(b.hora_inicio || ""));
+  }, [reuniones, today]);
+
+  const pendingTasks = useMemo(() => {
+    const pending = tareas.filter(t => t.estado !== "completada");
+    return sortTasksByUrgency(pending);
+  }, [tareas]);
+
+  const overdueTasks = useMemo(() => {
+    return tareas.filter(t => {
+      const d = daysUntil(t.fecha_limite);
+      return d !== null && d < 0 && t.estado !== "completada";
+    });
+  }, [tareas]);
+
+  const handleNavigateToMeeting = () => {
+    onSetTab("reuniones");
+  };
+
+  return (
+    <div>
+      <TodaySummaryBar
+        todayMeetings={todayMeetings.length}
+        pendingTasks={pendingTasks.length}
+        overdueTasks={overdueTasks.length}
+      />
+
+      {/* Meetings section */}
+      <div style={{ marginBottom: 28 }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+          <CalendarBlank size={16} weight="bold" style={{ color: "#4F46E5" }} />
+          <span className="text-text-main" style={{ fontWeight: 700, fontSize: 14 }}>
+            Reuniones de hoy
+          </span>
+          <span className="text-text-muted" style={{ fontSize: 12 }}>({todayMeetings.length})</span>
+        </div>
+        <div
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            padding: "8px 16px",
+          }}
+        >
+          <TodayTimeline meetings={todayMeetings} onNavigateToMeeting={handleNavigateToMeeting} />
+        </div>
+      </div>
+
+      {/* Tasks section */}
+      <div>
+        <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+          <ListChecks size={16} weight="bold" style={{ color: "#D97706" }} />
+          <span className="text-text-main" style={{ fontWeight: 700, fontSize: 14 }}>
+            Tareas pendientes
+          </span>
+          <span className="text-text-muted" style={{ fontSize: 12 }}>({pendingTasks.length})</span>
+        </div>
+        <div
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            padding: "8px 16px",
+          }}
+        >
+          <TodayTaskChecklist tasks={pendingTasks} onToggle={onToggleTask} />
+        </div>
+        <QuickAddTask onAdd={onQuickAddTask} />
+      </div>
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   TAB: TAREAS (List view — simplified from Kanban)
+   ══════════════════════════════════════════════════════════════════════ */
+
+function TareaListItem({ tarea, onEdit, onDelete, onToggle, t }) {
+  const docStatus = extractDocStatus(tarea);
+  const pedido = extractPedido(tarea);
+  const days = daysUntil(tarea.fecha_limite);
+  const overdue = days !== null && days < 0 && tarea.estado !== "completada";
+  const completed = tarea.estado === "completada";
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: -10 }}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        padding: "10px 12px",
+        borderBottom: "1px solid var(--border)",
+        transition: "background 0.1s",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-page)"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+    >
+      {/* Checkbox */}
+      <button
+        onClick={() => onToggle(tarea)}
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 4,
+          border: completed ? "none" : "2px solid var(--border)",
+          background: completed ? "#16A34A" : "transparent",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          marginTop: 1,
+          transition: "all 0.15s",
+        }}
+      >
+        {completed && <Check size={12} weight="bold" style={{ color: "#FFF" }} />}
+      </button>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="flex items-start gap-2">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className="text-text-main"
+                style={{
+                  fontWeight: 600,
+                  fontSize: 13,
+                  textDecoration: completed ? "line-through" : "none",
+                  opacity: completed ? 0.5 : 1,
+                }}
+              >
+                {tarea.titulo}
+              </span>
+              {tarea.auto_generated && (
+                <span style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 3,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  padding: "1px 6px",
+                  borderRadius: 999,
+                  background: "#7C3AED20",
+                  color: "#A78BFA",
+                }}>
+                  <Robot size={9} /> Auto · Excel
+                </span>
+              )}
+            </div>
+            {tarea.descripcion && (
+              <p className="text-text-muted" style={{
+                fontSize: 11,
+                marginTop: 2,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: 400,
+              }}>
+                {tarea.descripcion}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Meta row */}
+        <div className="flex items-center gap-3 flex-wrap" style={{ marginTop: 4 }}>
+          {/* Document status badge */}
+          {docStatus && (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: docStatus.colors.bg, color: docStatus.colors.fg }}>
+              {docStatus.label}
+            </span>
+          )}
+
+          {/* Pedido */}
+          {pedido && (
+            <span className="text-text-muted" style={{ fontSize: 10 }}>Pedido {pedido}</span>
+          )}
+
+          {tarea.fecha_limite && (
+            <span style={{
+              fontSize: 10,
+              color: overdue ? "#DC2626" : "var(--text-muted)",
+              fontWeight: overdue ? 600 : 400,
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
+            }}>
+              <CalendarBlank size={10} />
+              {formatDate(tarea.fecha_limite)}
+              {overdue && " · Vencida"}
+            </span>
+          )}
+
+          {tarea.asignado && (
+            <span className="text-text-muted" style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 3 }}>
+              <User size={10} /> {tarea.asignado}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-1" style={{ flexShrink: 0, marginTop: 1 }}>
+        <button onClick={() => onEdit(tarea)} className="btn-ghost" style={{ padding: 3 }}>
+          <PencilSimple size={13} />
+        </button>
+        <button onClick={() => onDelete(tarea.id)} className="btn-ghost" style={{ padding: 3, color: "#DC2626" }}>
+          <Trash size={13} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+function TaskSection({ title, tasks, count, defaultOpen = true, color, onEdit, onDelete, onToggle, t }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  if (tasks.length === 0 && defaultOpen) return null;
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2"
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "6px 0",
+          width: "100%",
+        }}
+      >
+        {open ? <CaretDown size={12} style={{ color: "var(--text-muted)" }} /> : <CaretRight size={12} style={{ color: "var(--text-muted)" }} />}
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+        <span className="text-text-sub" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {title}
+        </span>
+        <span className="text-text-muted" style={{ fontSize: 11, marginLeft: 4 }}>
+          {count}
+        </span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: "hidden" }}
+          >
+            <div
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              {tasks.map(tr => (
+                <TareaListItem key={tr.id} tarea={tr} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} t={t} />
+              ))}
+              {tasks.length === 0 && (
+                <div className="text-text-muted" style={{ fontSize: 12, padding: "20px 0", textAlign: "center" }}>
+                  Sin tareas
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function TareaModal({ tarea, onClose, onSaved, owner }) {
+  const [form, setForm] = useState({
+    titulo: tarea?.titulo || "",
+    descripcion: tarea?.descripcion || "",
+    estado: tarea?.estado || "pendiente",
+    fecha_limite: tarea?.fecha_limite || "",
+    asignado: tarea?.asignado || owner || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const save = async () => {
+    if (!form.titulo.trim()) return;
+    setSaving(true);
+    const payload = { ...form, titulo: form.titulo.trim() };
+    try {
+      const res = tarea
+        ? await api.put(`/agenda/tareas/${tarea.id}`, payload)
+        : await api.post("/agenda/tareas", payload, { params: { owner } });
+      onSaved(res.data, !!tarea);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Modal title={tarea ? "Editar tarea" : "Nueva tarea"} onClose={onClose}>
+      <Input label="Título" value={form.titulo} onChange={set("titulo")} placeholder="Descripción breve" className="mb-3.5" />
+      <Textarea label="Descripción" value={form.descripcion} onChange={set("descripcion")} className="mb-3.5" />
+      <div className="grid grid-cols-2 gap-3 mb-3.5">
+        <Select label="Estado" value={form.estado} onChange={set("estado")}>
+          <option value="pendiente">Pendiente</option>
+          <option value="en_progreso">En Progreso</option>
+          <option value="completada">Completada</option>
+        </Select>
+        <Input label="Fecha límite" type="date" value={form.fecha_limite} onChange={set("fecha_limite")} />
+        <Input label="Asignado" value={form.asignado} onChange={set("asignado")} placeholder="Nombre o iniciales" />
+      </div>
+      <div className="flex gap-2 justify-end mt-2">
+        <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+        <Button onClick={save} loading={saving} disabled={!form.titulo.trim()}>Guardar</Button>
+      </div>
+    </Modal>
+  );
+}
+
+function TabTareas({ tareas, setTareas, owner, t, compact, onToggleTask }) {
+  const { showToast } = useToast();
+  const [modal, setModal] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const syncTasks = async () => {
+    setSyncing(true);
+    try {
+      await api.post("/agenda/tareas/sync", null, { params: { owner } });
+      const res = await api.get("/agenda/tareas", { params: { owner } });
+      setTareas(res.data);
+      showToast("Tareas sincronizadas", "success");
+    } catch {
+      showToast("Error al sincronizar", "error");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const pendientes = sortTasksByUrgency(tareas.filter(tr => tr.estado === "pendiente"));
+  const enProgreso = sortTasksByUrgency(tareas.filter(tr => tr.estado === "en_progreso"));
+  const completadas = tareas.filter(tr => tr.estado === "completada").slice(0, 10);
+
+  const handleSaved = (result, isEdit) => {
+    setTareas(prev => isEdit ? prev.map(tr => tr.id === result.id ? result : tr) : [result, ...prev]);
+    setModal(null);
+  };
+
+  const handleDelete = async (id) => {
+    await api.delete(`/agenda/tareas/${id}`);
+    setTareas(prev => prev.filter(tr => tr.id !== id));
+  };
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div className="flex gap-2.5 mb-5 flex-wrap items-center">
+        <div className="flex-1" />
+        <Button icon={ArrowsClockwise} variant="secondary" size="sm" onClick={syncTasks} loading={syncing}>
+          Sincronizar
+        </Button>
+        <Button icon={Plus} onClick={() => setModal("new")}>Nueva tarea</Button>
+      </div>
+
+      {/* Grouped list */}
+      <TaskSection
+        title={getEstadoLabels(t).pendiente}
+        tasks={pendientes}
+        count={pendientes.length}
+        color="#6B7280"
+        defaultOpen={true}
+        onEdit={setModal}
+        onDelete={handleDelete}
+        onToggle={onToggleTask}
+        t={t}
+      />
+
+      <TaskSection
+        title={getEstadoLabels(t).en_progreso}
+        tasks={enProgreso}
+        count={enProgreso.length}
+        color="#D97706"
+        defaultOpen={true}
+        onEdit={setModal}
+        onDelete={handleDelete}
+        onToggle={onToggleTask}
+        t={t}
+      />
+
+      <TaskSection
+        title={getEstadoLabels(t).completada}
+        tasks={completadas}
+        count={completadas.length}
+        color="#16A34A"
+        defaultOpen={false}
+        onEdit={setModal}
+        onDelete={handleDelete}
+        onToggle={onToggleTask}
+        t={t}
+      />
+
+      <AnimatePresence>
+        {modal && <TareaModal tarea={modal === "new" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} owner={owner} />}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   TAB: REUNIONES (grouped by date proximity)
+   ══════════════════════════════════════════════════════════════════════ */
+
+function ReunionCard({ reunion, onEdit, onDelete, onViewActa, t, compact: isCompact }) {
+  const days = daysUntil(reunion.fecha);
+  const badge = days === 0 ? { label: t("agToday") || "Hoy", color: "#16A34A" }
+    : days === 1 ? { label: t("agTomorrow") || "Mañana", color: "#D97706" }
+    : days !== null && days > 0 ? { label: (t("agInDays") || "En {n} días").replace("{n}", days), color: "#3B82F6" }
+    : null;
+  const hasActa = !!reunion.acta;
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      style={{
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        padding: "12px 14px",
+      }}
+    >
+      <div className="flex justify-between items-start gap-2" style={{ marginBottom: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-text-main" style={{ fontWeight: 700, fontSize: 13 }}>{reunion.titulo}</p>
+            {badge && (
+              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: badge.color + "25", color: badge.color, fontWeight: 700 }}>
+                {badge.label}
+              </span>
+            )}
+            {hasActa && (
+              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: "#16A34A20", color: "#16A34A", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <FileText size={10} /> Acta
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-1" style={{ flexShrink: 0 }}>
+          {hasActa && (
+            <button onClick={() => onViewActa(reunion)} className="btn-ghost" style={{ padding: 3 }} title="Ver acta">
+              <FileText size={13} style={{ color: "#16A34A" }} />
+            </button>
+          )}
+          <button onClick={() => onEdit(reunion)} className="btn-ghost" style={{ padding: 3 }}>
+            <PencilSimple size={13} />
+          </button>
+          <button onClick={() => onDelete(reunion.id)} className="btn-ghost" style={{ padding: 3, color: "#DC2626" }}>
+            <Trash size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {reunion.fecha && (
+          <span className="flex items-center gap-1 text-text-sub" style={{ fontSize: 11 }}>
+            <CalendarBlank size={11} />{formatDate(reunion.fecha)}
+          </span>
+        )}
+        {(reunion.hora_inicio || reunion.hora_fin) && (
+          <span className="flex items-center gap-1 text-text-sub" style={{ fontSize: 11 }}>
+            <Clock size={11} />{reunion.hora_inicio}{reunion.hora_fin ? ` - ${reunion.hora_fin}` : ""}
+          </span>
+        )}
+        {reunion.ubicacion && (
+          <span className="flex items-center gap-1 text-text-sub" style={{ fontSize: 11 }}>
+            <MapPin size={11} />{reunion.ubicacion}
+          </span>
+        )}
+      </div>
+
+      {reunion.descripcion && (
+        <p className="text-text-muted" style={{ fontSize: 12, marginTop: 4 }}>{reunion.descripcion}</p>
+      )}
+      {reunion.asistentes?.length > 0 && (
+        <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {reunion.asistentes.map((a, i) => (
+            <span key={i} style={{
+              fontSize: 10,
+              padding: "2px 7px",
+              borderRadius: 999,
+              background: "var(--bg-page)",
+              border: "1px solid var(--border)",
+              color: "var(--text-sub)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 3,
+            }}>
+              <User size={9} />{a}
+            </span>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ReunionGroup({ title, borderColor, meetings, defaultOpen = true, onEdit, onDelete, onViewActa, t }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  if (meetings.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2"
+        style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 0", width: "100%" }}
+      >
+        {open ? <CaretDown size={12} style={{ color: "var(--text-muted)" }} /> : <CaretRight size={12} style={{ color: "var(--text-muted)" }} />}
+        {borderColor && <span style={{ width: 8, height: 8, borderRadius: "50%", background: borderColor }} />}
+        <span className="text-text-sub" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {title}
+        </span>
+        <span className="text-text-muted" style={{ fontSize: 11 }}>({meetings.length})</span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: "hidden" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4 }}>
+              {meetings.map(r => (
+                <div key={r.id} style={{ borderLeft: borderColor ? `3px solid ${borderColor}` : "none", paddingLeft: borderColor ? 10 : 0 }}>
+                  <ReunionCard reunion={r} onEdit={onEdit} onDelete={onDelete} onViewActa={onViewActa} t={t} />
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ReunionModal({ reunion, onClose, onSaved, t }) {
+  const { showToast } = useToast();
+  const [form, setForm] = useState({
+    titulo: reunion?.titulo || "",
+    fecha: reunion?.fecha || "",
+    hora_inicio: reunion?.hora_inicio || "",
+    hora_fin: reunion?.hora_fin || "",
+    asistentes: reunion?.asistentes?.join(", ") || "",
+    descripcion: reunion?.descripcion || "",
+    ubicacion: reunion?.ubicacion || "",
+    notas_reunion: reunion?.notas_reunion || "",
+    client_name: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [showActa, setShowActa] = useState(!!reunion?.acta);
+
+  const save = async () => {
+    if (!form.titulo.trim()) return;
+    setSaving(true);
+    const payload = {
+      ...form,
+      titulo: form.titulo.trim(),
+      asistentes: form.asistentes.split(",").map(a => a.trim()).filter(Boolean),
+    };
+    delete payload.client_name;
+    try {
+      const res = reunion
+        ? await api.put(`/agenda/reuniones/${reunion.id}`, payload)
+        : await api.post("/agenda/reuniones", payload);
+      onSaved(res.data, !!reunion);
+    } finally { setSaving(false); }
+  };
+
+  const generateMinutes = async () => {
+    if (!form.notas_reunion.trim()) {
+      showToast(t("mmNoNotes") || "Escribe notas de la reunión para generar el acta", "warning");
+      return;
+    }
+    if (!reunion?.id) {
+      showToast("Guarda la reunión primero antes de generar el acta", "warning");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const res = await api.post(`/agenda/reuniones/${reunion.id}/generate-minutes`, {
+        notes: form.notas_reunion,
+        client_name: form.client_name || null,
+      });
+      onSaved(res.data, true);
+      showToast("Acta generada correctamente", "success");
+    } catch (err) {
+      showToast(err?.response?.data?.detail || "Error generando acta", "error");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <Modal title={reunion ? "Editar reunión" : "Nueva reunión"} onClose={onClose} maxWidth={640}>
+      <Input label="Título" value={form.titulo} onChange={set("titulo")} placeholder="Asunto de la reunión" className="mb-3.5" />
+      <div className="grid grid-cols-2 gap-3 mb-3.5">
+        <Input label="Fecha" type="date" value={form.fecha} onChange={set("fecha")} />
+        <Input label="Ubicación" value={form.ubicacion} onChange={set("ubicacion")} placeholder="Sala, Teams, ..." />
+        <Input label="Hora inicio" type="time" value={form.hora_inicio} onChange={set("hora_inicio")} />
+        <Input label="Hora fin" type="time" value={form.hora_fin} onChange={set("hora_fin")} />
+      </div>
+      <Input label="Asistentes (separados por coma)" value={form.asistentes} onChange={set("asistentes")} placeholder="J. Paredes, L. García, ..." className="mb-3.5" />
+      <Textarea label="Descripción" value={form.descripcion} onChange={set("descripcion")} className="mb-3.5" />
+
+      {/* Meeting notes + AI section */}
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
+        <div className="flex items-center gap-2 mb-2">
+          <Robot size={16} weight="bold" style={{ color: "var(--accent)" }} />
+          <span className="text-text-main" style={{ fontWeight: 700, fontSize: 13 }}>
+            {t("mmNotes") || "Notas de la reunión"}
+          </span>
+        </div>
+        <Textarea
+          value={form.notas_reunion}
+          onChange={set("notas_reunion")}
+          placeholder="Escribe apuntes durante la reunión... La IA los usará para generar el acta formal."
+          className="mb-3"
+          style={{ minHeight: 120 }}
+        />
+        <div className="flex gap-2 items-end mb-3">
+          <div className="flex-1">
+            <Input
+              label="Cliente (opcional, para contexto)"
+              value={form.client_name}
+              onChange={set("client_name")}
+              placeholder="Nombre del cliente para incluir datos del proyecto"
+            />
+          </div>
+          <Button
+            icon={generating ? ArrowClockwise : Robot}
+            onClick={generateMinutes}
+            loading={generating}
+            disabled={!form.notas_reunion.trim() || !reunion?.id}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            {generating ? (t("mmRegenerating") || "Generando...") : (t("mmGenerateMinutes") || "Generar acta con IA")}
+          </Button>
+        </div>
+
+        {reunion?.acta && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={() => setShowActa(!showActa)}
+              style={{ fontSize: 12, fontWeight: 600, cursor: "pointer", background: "none", border: "none", color: "var(--accent)" }}
+            >
+              {showActa ? "Ocultar acta" : "Ver acta generada"}
+            </button>
+            {showActa && (
+              <div className="card" style={{ padding: 12, marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
+                <SimpleMarkdown text={reunion.acta} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 justify-end mt-4">
+        <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+        <Button onClick={save} loading={saving} disabled={!form.titulo.trim()}>Guardar</Button>
+      </div>
+    </Modal>
+  );
+}
+
+function TabReuniones({ reuniones, setReuniones, owner, t }) {
+  const { showToast } = useToast();
+  const [modal, setModal] = useState(null);
+  const [actaModal, setActaModal] = useState(null);
+
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const sorted = useMemo(() => {
+    return [...reuniones].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  }, [reuniones]);
+
+  /* Group meetings by time proximity */
+  const groups = useMemo(() => {
+    const hoy = [];
+    const estaSemana = [];
+    const proximaSemana = [];
+    const masAdelante = [];
+    const pasadas = [];
+
+    sorted.forEach(r => {
+      if (!r.fecha) {
+        masAdelante.push(r);
+        return;
+      }
+      const d = new Date(r.fecha);
+      d.setHours(0, 0, 0, 0);
+
+      if (isSameDay(r.fecha, today)) {
+        hoy.push(r);
+      } else if (d < today) {
+        pasadas.push(r);
+      } else if (isThisWeek(r.fecha, today)) {
+        estaSemana.push(r);
+      } else if (isNextWeek(r.fecha, today)) {
+        proximaSemana.push(r);
+      } else {
+        masAdelante.push(r);
+      }
+    });
+
+    // Reverse pasadas so most recent appear first
+    pasadas.reverse();
+
+    return { hoy, estaSemana, proximaSemana, masAdelante, pasadas };
+  }, [sorted, today]);
+
+  const handleSaved = (result, isEdit) => {
+    setReuniones(prev => isEdit ? prev.map(r => r.id === result.id ? result : r) : [result, ...prev]);
+    setModal(null);
+  };
+
+  const handleDelete = async (id) => {
+    await api.delete(`/agenda/reuniones/${id}`);
+    setReuniones(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleCreateTasks = async (acciones) => {
+    let created = 0;
+    for (const accion of acciones) {
+      try {
+        await api.post("/agenda/tareas", {
+          titulo: accion.titulo,
+          descripcion: "Acción de reunión",
+          prioridad: accion.prioridad || "media",
+          estado: "pendiente",
+          fecha_limite: accion.fecha_limite !== "Por definir" ? accion.fecha_limite : "",
+          asignado: accion.asignado !== "Por asignar" ? accion.asignado : owner,
+        }, { params: { owner } });
+        created++;
+      } catch { /* ignore individual failures */ }
+    }
+    showToast(`${created} tareas creadas desde el acta`, "success");
+    setActaModal(null);
+  };
+
+  return (
+    <div>
+      <div className="flex gap-3 mb-5 items-center flex-wrap">
+        <div className="flex-1" />
+        <Button icon={Plus} onClick={() => setModal("new")}>Nueva reunión</Button>
+      </div>
+
+      <ReunionGroup title="Hoy" borderColor="#16A34A" meetings={groups.hoy} defaultOpen={true} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
+      <ReunionGroup title="Esta semana" borderColor="#4F46E5" meetings={groups.estaSemana} defaultOpen={true} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
+      <ReunionGroup title="Próxima semana" borderColor="#6B7280" meetings={groups.proximaSemana} defaultOpen={true} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
+      <ReunionGroup title="Más adelante" borderColor={null} meetings={groups.masAdelante} defaultOpen={true} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
+      <ReunionGroup title="Pasadas" borderColor="#6B728050" meetings={groups.pasadas} defaultOpen={false} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
+
+      {reuniones.length === 0 && (
+        <div className="text-text-muted" style={{ fontSize: 13, padding: 60, textAlign: "center" }}>
+          <CalendarBlank size={32} weight="thin" style={{ display: "inline-block", marginBottom: 8 }} />
+          <div>No hay reuniones programadas.</div>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {modal && <ReunionModal reunion={modal === "new" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} t={t} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {actaModal && (
+          <ActaView
+            reunion={actaModal}
+            onClose={() => setActaModal(null)}
+            onCreateTasks={handleCreateTasks}
+            t={t}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   TAB: NOTAS (unchanged — grid of colored note cards)
+   ══════════════════════════════════════════════════════════════════════ */
 
 function NotaCard({ nota, onEdit, onDelete }) {
   const bg = NOTE_COLORS.find(c => c.key === (nota.color || "default"))?.bg || "var(--bg-card)";
@@ -260,562 +1469,164 @@ function TabNotas({ compact }) {
   );
 }
 
-// ─────────────────────────── TAB REUNIONES ───────────────────────────
 
-function ReunionCard({ reunion, onEdit, onDelete, onViewActa, t }) {
-  const days = daysUntil(reunion.fecha);
-  const badge = days === 0 ? { label: t('agToday'), color: "#16A34A" }
-    : days === 1 ? { label: t('agTomorrow'), color: "#D97706" }
-    : days !== null && days > 0 ? { label: t('agInDays').replace('{n}', days), color: "#3B82F6" }
-    : null;
-  const hasActa = !!reunion.acta;
-
-  return (
-    <motion.div
-      layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className="card p-4"
-    >
-      <div className="flex justify-between items-start gap-2 mb-2.5">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-text-main" style={{ fontWeight: 700, fontSize: 14 }}>{reunion.titulo}</p>
-            {badge && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: badge.color + "30", color: badge.color, fontWeight: 700 }}>{badge.label}</span>}
-            {hasActa && (
-              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: "#16A34A20", color: "#16A34A", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
-                <FileText size={10} /> Acta
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-1">
-          {hasActa && (
-            <button onClick={() => onViewActa(reunion)} className="btn-ghost p-0.5" title={t("mmMinutes") || "Ver acta"}>
-              <FileText size={14} style={{ color: "#16A34A" }} />
-            </button>
-          )}
-          <button onClick={() => onEdit(reunion)} className="btn-ghost p-0.5"><PencilSimple size={14} /></button>
-          <button onClick={() => onDelete(reunion.id)} className="btn-ghost p-0.5 text-red-500"><Trash size={14} /></button>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        {reunion.fecha && (
-          <span className="flex items-center gap-1 text-text-sub" style={{ fontSize: 11 }}>
-            <CalendarBlank size={12} />{formatDate(reunion.fecha)}
-          </span>
-        )}
-        {(reunion.hora_inicio || reunion.hora_fin) && (
-          <span className="flex items-center gap-1 text-text-sub" style={{ fontSize: 11 }}>
-            <Clock size={12} />{reunion.hora_inicio}{reunion.hora_fin ? ` - ${reunion.hora_fin}` : ""}
-          </span>
-        )}
-        {reunion.ubicacion && (
-          <span className="flex items-center gap-1 text-text-sub" style={{ fontSize: 11 }}>
-            <MapPin size={12} />{reunion.ubicacion}
-          </span>
-        )}
-      </div>
-      {reunion.descripcion && (
-        <p className="text-text-muted mt-2" style={{ fontSize: 13 }}>{reunion.descripcion}</p>
-      )}
-      {reunion.asistentes?.length > 0 && (
-        <div className="mt-2 flex gap-1 flex-wrap">
-          {reunion.asistentes.map((a, i) => (
-            <span key={i} className="bg-page border border-border text-text-sub" style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999 }}>
-              <User size={9} style={{ display: "inline", marginRight: 3 }} />{a}
-            </span>
-          ))}
-        </div>
-      )}
-    </motion.div>
-  );
-}
-
-function ReunionModal({ reunion, onClose, onSaved, t }) {
-  const { showToast } = useToast();
-  const [form, setForm] = useState({
-    titulo: reunion?.titulo || "",
-    fecha: reunion?.fecha || "",
-    hora_inicio: reunion?.hora_inicio || "",
-    hora_fin: reunion?.hora_fin || "",
-    asistentes: reunion?.asistentes?.join(", ") || "",
-    descripcion: reunion?.descripcion || "",
-    ubicacion: reunion?.ubicacion || "",
-    notas_reunion: reunion?.notas_reunion || "",
-    client_name: "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [showActa, setShowActa] = useState(!!reunion?.acta);
-
-  const save = async () => {
-    if (!form.titulo.trim()) return;
-    setSaving(true);
-    const payload = {
-      ...form,
-      titulo: form.titulo.trim(),
-      asistentes: form.asistentes.split(",").map(a => a.trim()).filter(Boolean),
-    };
-    delete payload.client_name; // Not persisted
-    try {
-      const res = reunion
-        ? await api.put(`/agenda/reuniones/${reunion.id}`, payload)
-        : await api.post("/agenda/reuniones", payload);
-      onSaved(res.data, !!reunion);
-    } finally { setSaving(false); }
-  };
-
-  const generateMinutes = async () => {
-    if (!form.notas_reunion.trim()) {
-      showToast(t("mmNoNotes") || "Escribe notas de la reunion para generar el acta", "warning");
-      return;
-    }
-    if (!reunion?.id) {
-      showToast("Guarda la reunion primero antes de generar el acta", "warning");
-      return;
-    }
-    setGenerating(true);
-    try {
-      const res = await api.post(`/agenda/reuniones/${reunion.id}/generate-minutes`, {
-        notes: form.notas_reunion,
-        client_name: form.client_name || null,
-      });
-      onSaved(res.data, true);
-      showToast("Acta generada correctamente", "success");
-    } catch (err) {
-      showToast(err?.response?.data?.detail || "Error generando acta", "error");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
-
-  return (
-    <Modal title={reunion ? "Editar reunion" : "Nueva reunion"} onClose={onClose} maxWidth={640}>
-      <Input label="Titulo" value={form.titulo} onChange={set("titulo")} placeholder="Asunto de la reunion" className="mb-3.5" />
-      <div className="grid grid-cols-2 gap-3 mb-3.5">
-        <Input label="Fecha" type="date" value={form.fecha} onChange={set("fecha")} />
-        <Input label="Ubicacion" value={form.ubicacion} onChange={set("ubicacion")} placeholder="Sala, Teams, ..." />
-        <Input label="Hora inicio" type="time" value={form.hora_inicio} onChange={set("hora_inicio")} />
-        <Input label="Hora fin" type="time" value={form.hora_fin} onChange={set("hora_fin")} />
-      </div>
-      <Input label="Asistentes (separados por coma)" value={form.asistentes} onChange={set("asistentes")} placeholder="J. Paredes, L. Garcia, ..." className="mb-3.5" />
-      <Textarea label="Descripcion" value={form.descripcion} onChange={set("descripcion")} className="mb-3.5" />
-
-      {/* Meeting notes section */}
-      <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
-        <div className="flex items-center gap-2 mb-2">
-          <Robot size={16} weight="bold" style={{ color: "var(--accent)" }} />
-          <span className="text-text-main" style={{ fontWeight: 700, fontSize: 13 }}>
-            {t("mmNotes") || "Notas de la reunion"}
-          </span>
-        </div>
-        <Textarea
-          value={form.notas_reunion}
-          onChange={set("notas_reunion")}
-          placeholder="Escribe apuntes durante la reunion... La IA los usara para generar el acta formal."
-          className="mb-3"
-          style={{ minHeight: 120 }}
-        />
-        <div className="flex gap-2 items-end mb-3">
-          <div className="flex-1">
-            <Input
-              label="Cliente (opcional, para contexto)"
-              value={form.client_name}
-              onChange={set("client_name")}
-              placeholder="Nombre del cliente para incluir datos del proyecto"
-            />
-          </div>
-          <Button
-            icon={generating ? ArrowClockwise : Robot}
-            onClick={generateMinutes}
-            loading={generating}
-            disabled={!form.notas_reunion.trim() || !reunion?.id}
-            style={{ whiteSpace: "nowrap" }}
-          >
-            {generating ? (t("mmRegenerating") || "Generando...") : (t("mmGenerateMinutes") || "Generar acta con IA")}
-          </Button>
-        </div>
-
-        {/* Show existing acta preview */}
-        {reunion?.acta && (
-          <div style={{ marginTop: 8 }}>
-            <button
-              onClick={() => setShowActa(!showActa)}
-              className="text-text-sub"
-              style={{ fontSize: 12, fontWeight: 600, cursor: "pointer", background: "none", border: "none", color: "var(--accent)" }}
-            >
-              {showActa ? "Ocultar acta" : "Ver acta generada"}
-            </button>
-            {showActa && (
-              <div className="card" style={{ padding: 12, marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
-                <SimpleMarkdown text={reunion.acta} />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="flex gap-2 justify-end mt-4">
-        <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-        <Button onClick={save} loading={saving} disabled={!form.titulo.trim()}>Guardar</Button>
-      </div>
-    </Modal>
-  );
-}
-
-function TabReuniones({ owner, t }) {
-  const { showToast } = useToast();
-  const [reuniones, setReuniones] = useState([]);
-  const [filtro, setFiltro] = useState("proximas");
-  const [modal, setModal] = useState(null);
-  const [actaModal, setActaModal] = useState(null);
-  const [syncing, setSyncing] = useState(false);
-
-  useEffect(() => {
-    if (!owner) return;
-    setSyncing(true);
-    api.get("/agenda/reuniones", { params: { owner } })
-      .then(r => setReuniones(r.data))
-      .catch(() => {})
-      .finally(() => setSyncing(false));
-  }, [owner]);
-
-  const today = new Date(); today.setHours(0,0,0,0);
-  const sorted = [...reuniones].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-  const filtered = sorted.filter(r => {
-    if (!r.fecha) return filtro === "proximas";
-    const d = new Date(r.fecha); d.setHours(0,0,0,0);
-    return filtro === "proximas" ? d >= today : d < today;
-  });
-
-  const handleSaved = (result, isEdit) => {
-    setReuniones(prev => isEdit ? prev.map(r => r.id === result.id ? result : r) : [result, ...prev]);
-    setModal(null);
-  };
-  const handleDelete = async (id) => {
-    await api.delete(`/agenda/reuniones/${id}`);
-    setReuniones(prev => prev.filter(r => r.id !== id));
-  };
-
-  const handleCreateTasks = async (acciones) => {
-    let created = 0;
-    for (const accion of acciones) {
-      try {
-        await api.post("/agenda/tareas", {
-          titulo: accion.titulo,
-          descripcion: `Accion de reunion`,
-          prioridad: accion.prioridad || "media",
-          estado: "pendiente",
-          fecha_limite: accion.fecha_limite !== "Por definir" ? accion.fecha_limite : "",
-          asignado: accion.asignado !== "Por asignar" ? accion.asignado : owner,
-        }, { params: { owner } });
-        created++;
-      } catch { /* ignore individual failures */ }
-    }
-    showToast(`${created} tareas creadas desde el acta`, "success");
-    setActaModal(null);
-  };
-
-  return (
-    <div>
-      <div className="flex gap-3 mb-5 items-center flex-wrap">
-        {syncing && (
-          <span className="text-xs flex items-center gap-1" style={{ color: "#A78BFA" }}>
-            <Robot size={12} /> Sincronizando con email...
-          </span>
-        )}
-        <div className="flex gap-1">
-          {["proximas", "pasadas"].map(f => (
-            <Button key={f} variant={filtro === f ? "primary" : "secondary"} size="sm" onClick={() => setFiltro(f)}>
-              {f === "proximas" ? "Proximas" : "Pasadas"}
-            </Button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        <Button icon={Plus} onClick={() => setModal("new")}>Nueva reunion</Button>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="text-center text-text-muted" style={{ padding: 60 }}>
-          {filtro === "proximas" ? "No hay reuniones proximas." : "No hay reuniones pasadas."}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <AnimatePresence>
-            {filtered.map(r => (
-              <ReunionCard key={r.id} reunion={r} onEdit={setModal} onDelete={handleDelete} onViewActa={setActaModal} t={t} />
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {modal && <ReunionModal reunion={modal === "new" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} t={t} />}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {actaModal && (
-          <ActaView
-            reunion={actaModal}
-            onClose={() => setActaModal(null)}
-            onCreateTasks={handleCreateTasks}
-            t={t}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ─────────────────────────── TAB TAREAS ───────────────────────────
-
-function TareaCard({ tarea, onEdit, onDelete, onChangeEstado, t }) {
-  const pc = PRIORIDAD_COLORS[tarea.prioridad] || { bg: "#6B7280", text: "#FFF" };
-  const days = daysUntil(tarea.fecha_limite);
-  const overdue = days !== null && days < 0 && tarea.estado !== "completada";
-
-  return (
-    <motion.div
-      layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className="card"
-      style={{
-        borderColor: overdue ? "#DC262640" : undefined,
-        padding: 12, marginBottom: 8,
-      }}
-    >
-      <div className="flex justify-between gap-2 items-start">
-        <div className="flex-1 flex flex-col gap-1">
-          {tarea.auto_generated && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#7C3AED20", color: "#A78BFA", width: "fit-content" }}>
-              <Robot size={9} /> Auto · Excel
-            </span>
-          )}
-          <p className="text-text-main" style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>{tarea.titulo}</p>
-        </div>
-        <div className="flex gap-1">
-          {!tarea.auto_generated && <button onClick={() => onEdit(tarea)} className="btn-ghost p-0.5"><PencilSimple size={13} /></button>}
-          {!tarea.auto_generated && <button onClick={() => onDelete(tarea.id)} className="btn-ghost p-0.5 text-red-500"><Trash size={13} /></button>}
-        </div>
-      </div>
-      {tarea.descripcion && <p className="text-text-muted mt-1" style={{ fontSize: 11 }}>{tarea.descripcion}</p>}
-      <div className="flex flex-wrap gap-1.5 mt-2 items-center">
-        <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: pc.bg, color: pc.text, fontWeight: 700 }}>{tarea.prioridad}</span>
-        {tarea.asignado && <span className="text-text-muted" style={{ fontSize: 10 }}><User size={9} style={{ display: "inline" }} /> {tarea.asignado}</span>}
-        {tarea.fecha_limite && (
-          <span style={{ fontSize: 10, color: overdue ? "#DC2626" : "var(--text-muted)" }}>
-            <CalendarBlank size={9} style={{ display: "inline" }} /> {formatDate(tarea.fecha_limite)}
-            {overdue && " · Vencida"}
-          </span>
-        )}
-      </div>
-      <div className="mt-2.5 flex gap-1">
-        {ESTADO_COLS.filter(e => e !== tarea.estado).map(e => (
-          <Button key={e} variant="secondary" size="sm" onClick={() => onChangeEstado(tarea.id, e)}
-            style={{ fontSize: 10, padding: "3px 8px" }}>
-            → {getEstadoLabels(t)[e]}
-          </Button>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
-
-function TareaModal({ tarea, onClose, onSaved, owner }) {
-  const [form, setForm] = useState({
-    titulo: tarea?.titulo || "",
-    descripcion: tarea?.descripcion || "",
-    prioridad: tarea?.prioridad || "media",
-    estado: tarea?.estado || "pendiente",
-    fecha_limite: tarea?.fecha_limite || "",
-    asignado: tarea?.asignado || owner || "",
-  });
-  const [saving, setSaving] = useState(false);
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
-
-  const save = async () => {
-    if (!form.titulo.trim()) return;
-    setSaving(true);
-    const payload = { ...form, titulo: form.titulo.trim() };
-    try {
-      const res = tarea
-        ? await api.put(`/agenda/tareas/${tarea.id}`, payload)
-        : await api.post("/agenda/tareas", payload, { params: { owner } });
-      onSaved(res.data, !!tarea);
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <Modal title={tarea ? "Editar tarea" : "Nueva tarea"} onClose={onClose}>
-      <Input label="Título" value={form.titulo} onChange={set("titulo")} placeholder="Descripción breve" className="mb-3.5" />
-      <Textarea label="Descripción" value={form.descripcion} onChange={set("descripcion")} className="mb-3.5" />
-      <div className="grid grid-cols-2 gap-3 mb-3.5">
-        <Select label="Prioridad" value={form.prioridad} onChange={set("prioridad")}>
-          <option value="alta">Alta</option>
-          <option value="media">Media</option>
-          <option value="baja">Baja</option>
-        </Select>
-        <Select label="Estado" value={form.estado} onChange={set("estado")}>
-          <option value="pendiente">Pendiente</option>
-          <option value="en_progreso">En Progreso</option>
-          <option value="completada">Completada</option>
-        </Select>
-        <Input label="Fecha límite" type="date" value={form.fecha_limite} onChange={set("fecha_limite")} />
-        <Input label="Asignado" value={form.asignado} onChange={set("asignado")} placeholder="Nombre o iniciales" />
-      </div>
-      <div className="flex gap-2 justify-end mt-2">
-        <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-        <Button onClick={save} loading={saving} disabled={!form.titulo.trim()}>Guardar</Button>
-      </div>
-    </Modal>
-  );
-}
-
-function TabTareas({ owner, t, compact }) {
-  const [tareas, setTareas] = useState([]);
-  const [modal, setModal] = useState(null);
-  const [filtroPrioridad, setFiltroPrioridad] = useState("todas");
-  const [syncing, setSyncing] = useState(false);
-
-  const loadTareas = useCallback(() => {
-    api.get("/agenda/tareas", { params: { owner } }).then(r => setTareas(r.data)).catch(() => {});
-  }, [owner]);
-
-  useEffect(() => {
-    if (!owner) return;
-    setSyncing(true);
-    api.post("/agenda/tareas/sync", null, { params: { owner } })
-      .catch(() => {})
-      .finally(() => { setSyncing(false); loadTareas(); });
-  }, [owner, loadTareas]);
-
-  const filtered = tareas.filter(tr =>
-    filtroPrioridad === "todas" || tr.prioridad === filtroPrioridad
-  );
-
-  const handleSaved = (result, isEdit) => {
-    setTareas(prev => isEdit ? prev.map(tr => tr.id === result.id ? result : tr) : [result, ...prev]);
-    setModal(null);
-  };
-  const handleDelete = async (id) => {
-    await api.delete(`/agenda/tareas/${id}`);
-    setTareas(prev => prev.filter(tr => tr.id !== id));
-  };
-  const handleChangeEstado = async (id, nuevoEstado) => {
-    const res = await api.put(`/agenda/tareas/${id}`, { estado: nuevoEstado });
-    setTareas(prev => prev.map(tr => tr.id === id ? res.data : tr));
-  };
-
-  return (
-    <div>
-      <div className="flex gap-2.5 mb-5 flex-wrap items-center">
-        <div className="flex gap-1">
-          {["todas", "alta", "media", "baja"].map(p => (
-            <Button key={p} variant={filtroPrioridad === p ? "primary" : "secondary"} size="sm" onClick={() => setFiltroPrioridad(p)}>
-              {p.charAt(0).toUpperCase() + p.slice(1)}
-            </Button>
-          ))}
-        </div>
-        {syncing && (
-          <span className="text-xs flex items-center gap-1" style={{ color: "#A78BFA" }}>
-            <Robot size={12} /> Sincronizando con Excel...
-          </span>
-        )}
-        <div className="flex-1" />
-        <Button icon={Plus} onClick={() => setModal("new")}>Nueva tarea</Button>
-      </div>
-
-      {/* Columnas */}
-      <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(3, 1fr)", gap: 16 }}>
-        {ESTADO_COLS.map(col => {
-          const colTareas = filtered.filter(tr => tr.estado === col);
-          const colColors = { pendiente: "#6B7280", en_progreso: "#D97706", completada: "#16A34A" };
-          return (
-            <div key={col}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-2 h-2 rounded-full" style={{ background: colColors[col] }} />
-                <span className="text-text-sub" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  {getEstadoLabels(t)[col]}
-                </span>
-                <span className="ml-auto text-text-muted bg-card border border-border" style={{ fontSize: 11, borderRadius: 999, padding: "1px 7px" }}>
-                  {colTareas.length}
-                </span>
-              </div>
-              <div style={{ minHeight: 80 }}>
-                <AnimatePresence>
-                  {colTareas.map(tr => (
-                    <TareaCard key={tr.id} tarea={tr} onEdit={setModal} onDelete={handleDelete} onChangeEstado={handleChangeEstado} t={t} />
-                  ))}
-                </AnimatePresence>
-                {colTareas.length === 0 && (
-                  <div className="border border-dashed border-border text-center text-text-muted" style={{ borderRadius: 10, padding: "24px 0", fontSize: 11 }}>
-                    Sin tareas
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <AnimatePresence>
-        {modal && <TareaModal tarea={modal === "new" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} owner={owner} />}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ─────────────────────────── Página principal ───────────────────────────
+/* ══════════════════════════════════════════════════════════════════════
+   MAIN PAGE COMPONENT
+   ══════════════════════════════════════════════════════════════════════ */
 
 function getTabs(t) {
   return [
-    { key: "tareas",    label: t('agTasks') },
-    { key: "notas",     label: t('agNotes') },
-    { key: "reuniones", label: t('agMeetings') },
+    { key: "hoy",       label: "Hoy" },
+    { key: "tareas",    label: t("agTasks") || "Tareas" },
+    { key: "reuniones", label: t("agMeetings") || "Reuniones" },
+    { key: "notas",     label: t("agNotes") || "Notas" },
   ];
 }
 
 export default function Agenda({ compact = false }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState("tareas");
-  const user = (() => {
-    try { return JSON.parse(localStorage.getItem("docflow_user")) || { initials: "JP" }; } catch { return { initials: "JP" }; }
-  })();
+  const { showToast } = useToast();
+  const [tab, setTab] = useState("hoy");
+
+  /* User info from localStorage */
+  const user = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("docflow_user")) || { initials: "JP" }; }
+    catch { return { initials: "JP" }; }
+  }, []);
+
+  /* ── Shared state: tareas and reuniones loaded once at top level ── */
+  const [tareas, setTareas] = useState([]);
+  const [reuniones, setReuniones] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    if (!user.initials) return;
+    setLoading(true);
+    try {
+      const [tareasRes, reunionesRes] = await Promise.all([
+        api.get("/agenda/tareas", { params: { owner: user.initials } }),
+        api.get("/agenda/reuniones", { params: { owner: user.initials } }),
+      ]);
+      setTareas(tareasRes.data);
+      setReuniones(reunionesRes.data);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [user.initials]);
+
+  /* Initial sync + load */
+  useEffect(() => {
+    if (!user.initials) return;
+    // Sync tasks from Excel then load everything
+    api.post("/agenda/tareas/sync", null, { params: { owner: user.initials } })
+      .catch(() => {})
+      .finally(() => { loadData(); });
+  }, [user.initials, loadData]);
+
+  /* ── Toggle task completion (shared by Hoy and Tareas tabs) ── */
+  const handleToggleTask = useCallback(async (task) => {
+    const newEstado = task.estado === "completada" ? "pendiente" : "completada";
+    try {
+      const res = await api.put(`/agenda/tareas/${task.id}`, { estado: newEstado });
+      setTareas(prev => prev.map(tr => tr.id === task.id ? res.data : tr));
+    } catch {
+      showToast("Error al actualizar tarea", "error");
+    }
+  }, [showToast]);
+
+  /* ── Quick add task from Hoy tab ── */
+  const handleQuickAddTask = useCallback(async (titulo) => {
+    try {
+      const res = await api.post("/agenda/tareas", {
+        titulo,
+        prioridad: "media",
+        estado: "pendiente",
+        asignado: user.initials,
+      }, { params: { owner: user.initials } });
+      setTareas(prev => [res.data, ...prev]);
+      showToast("Tarea creada", "success");
+    } catch {
+      showToast("Error al crear tarea", "error");
+    }
+  }, [user.initials, showToast]);
 
   return (
     <div>
-      {!compact && <PageHeader title={t("agenda") || "Agenda"} subtitle="Notas, reuniones y tareas del equipo" />}
+      {!compact && <PageHeader title={t("agenda") || "Agenda"} subtitle="Tu espacio personal de productividad" />}
 
       {/* Sub-tabs */}
       <div className="flex gap-1 mb-6 border-b border-border">
         {getTabs(t).map(({ key, label }) => (
-          <button key={key} onClick={() => setTab(key)}
+          <button
+            key={key}
+            onClick={() => setTab(key)}
             style={{
-              padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              background: "none", border: "none",
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              background: "none",
+              border: "none",
               borderBottom: tab === key ? "2px solid var(--accent)" : "2px solid transparent",
               color: tab === key ? "var(--accent)" : "var(--text-muted)",
               marginBottom: -1,
               transition: "color 0.15s",
-            }}>
+            }}
+          >
             {label}
           </button>
         ))}
       </div>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={tab}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.18 }}
-        >
-          {tab === "notas" && <TabNotas compact={compact} />}
-          {tab === "reuniones" && <TabReuniones owner={user.initials} t={t} />}
-          {tab === "tareas" && <TabTareas owner={user.initials} t={t} compact={compact} />}
-        </motion.div>
-      </AnimatePresence>
+      {/* Loading state */}
+      {loading && (
+        <div className="text-text-muted" style={{ fontSize: 13, padding: 40, textAlign: "center" }}>
+          Cargando...
+        </div>
+      )}
+
+      {/* Tab content with transitions */}
+      {!loading && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.18 }}
+          >
+            {tab === "hoy" && (
+              <TabHoy
+                tareas={tareas}
+                reuniones={reuniones}
+                owner={user.initials}
+                onSetTab={setTab}
+                onToggleTask={handleToggleTask}
+                onQuickAddTask={handleQuickAddTask}
+                compact={compact}
+              />
+            )}
+            {tab === "tareas" && (
+              <TabTareas
+                tareas={tareas}
+                setTareas={setTareas}
+                owner={user.initials}
+                t={t}
+                compact={compact}
+                onToggleTask={handleToggleTask}
+              />
+            )}
+            {tab === "reuniones" && (
+              <TabReuniones
+                reuniones={reuniones}
+                setReuniones={setReuniones}
+                owner={user.initials}
+                t={t}
+              />
+            )}
+            {tab === "notas" && <TabNotas compact={compact} />}
+          </motion.div>
+        </AnimatePresence>
+      )}
     </div>
   );
 }

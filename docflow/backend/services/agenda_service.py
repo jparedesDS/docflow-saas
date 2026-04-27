@@ -75,15 +75,55 @@ def create_tarea(owner: str, item: dict):
 
 
 def sync_tareas(owner: str, docs: list) -> dict:
-    """Crea tareas automáticas para docs pendientes del owner. Evita duplicados."""
+    """Sync auto-generated tasks with current Excel state.
+
+    - Creates tasks for NEW pending documents
+    - Marks as completed tasks whose documents are no longer pending (e.g. approved/sent)
+    - Updates description/status for documents that changed state but are still pending
+    """
     data = _load()
-    existing_source_ids = {t["source_doc_id"] for t in data["tareas"] if t.get("source_doc_id")}
-    created = 0
-    skipped = 0
+
+    # Build lookup: source_doc_id → current Excel doc
+    pending_by_source = {}
     for doc in docs:
         source_id = f"{doc.get('Nº Pedido', '')}_{doc.get('Nº Doc. EIPSA', '')}_{doc.get('Nº Revisión', doc.get('Rev.', ''))}"
+        pending_by_source[source_id] = doc
+
+    existing_source_ids = set()
+    completed = 0
+    updated = 0
+
+    for tarea in data["tareas"]:
+        if not tarea.get("auto_generated") or tarea.get("owner") != owner:
+            continue
+        sid = tarea.get("source_doc_id")
+        if not sid:
+            continue
+        existing_source_ids.add(sid)
+
+        if sid not in pending_by_source:
+            # Document is no longer pending → mark task as completed
+            if tarea["estado"] != "completada":
+                tarea["estado"] = "completada"
+                tarea["updatedAt"] = datetime.now(timezone.utc).isoformat()
+                completed += 1
+        else:
+            # Document still pending → update description with current state
+            doc = pending_by_source[sid]
+            new_desc = f"Pedido {doc.get('Nº Pedido', '')} · Rev. {doc.get('Nº Revisión', '')} · Estado: {doc.get('Estado', '') or 'Sin Enviar'}"
+            if tarea.get("descripcion") != new_desc:
+                tarea["descripcion"] = new_desc
+                tarea["updatedAt"] = datetime.now(timezone.utc).isoformat()
+                updated += 1
+            # Re-open if it was manually completed but doc is still pending
+            if tarea["estado"] == "completada":
+                tarea["estado"] = "pendiente"
+                tarea["updatedAt"] = datetime.now(timezone.utc).isoformat()
+
+    # Create new tasks for docs not yet tracked
+    created = 0
+    for source_id, doc in pending_by_source.items():
         if source_id in existing_source_ids:
-            skipped += 1
             continue
         estado = (doc.get("Estado") or "").strip().lower()
         prioridad = "alta" if estado in {"rechazado", "com. mayores", "comentado"} else "media"
@@ -102,9 +142,12 @@ def sync_tareas(owner: str, docs: list) -> dict:
             "owner": owner,
         }
         create("tareas", tarea)
-        existing_source_ids.add(source_id)
         created += 1
-    return {"created": created, "skipped": skipped}
+
+    if completed > 0 or updated > 0:
+        _save(data)
+
+    return {"created": created, "completed": completed, "updated": updated}
 
 
 def delete(tipo: str, item_id: str):
