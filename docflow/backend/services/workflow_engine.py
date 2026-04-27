@@ -37,26 +37,54 @@ def on_event(tenant_id: int, event_type: str, event_data: dict) -> list:
 
             log.info("workflow_triggered")
             actions = wf.actions or []
+            wf_results = []
             for action in actions:
                 try:
                     result = execute_action(action, event_data, tenant_id)
-                    results.append({
+                    action_result = {
                         "workflow_id": wf.id,
                         "workflow_name": wf.name,
                         "action_type": action.get("type"),
                         "success": True,
                         "result": result,
-                    })
+                    }
+                    results.append(action_result)
+                    wf_results.append(action_result)
                     log.info("workflow_action_executed", action_type=action.get("type"))
                 except Exception as exc:
-                    results.append({
+                    action_result = {
                         "workflow_id": wf.id,
                         "workflow_name": wf.name,
                         "action_type": action.get("type"),
                         "success": False,
                         "error": str(exc),
-                    })
+                    }
+                    results.append(action_result)
+                    wf_results.append(action_result)
                     log.error("workflow_action_failed", action_type=action.get("type"), error=str(exc))
+
+            # Persist execution record
+            actions_total = len(actions)
+            actions_succeeded = sum(1 for r in wf_results if r.get("success"))
+            exec_status = "success" if actions_succeeded == actions_total else "failed" if actions_succeeded == 0 else "partial"
+
+            try:
+                from db.models import WorkflowExecution
+                execution = WorkflowExecution(
+                    tenant_id=tenant_id,
+                    workflow_id=wf.id,
+                    trigger_event=event_type,
+                    event_data=event_data,
+                    results=wf_results,
+                    status=exec_status,
+                    actions_total=actions_total,
+                    actions_succeeded=actions_succeeded,
+                )
+                session.add(execution)
+                session.commit()
+            except Exception as exc:
+                session.rollback()
+                log.warning("workflow_execution_persist_failed", error=str(exc))
     finally:
         session.close()
 
@@ -221,3 +249,52 @@ def _action_send_email(action: dict, data: dict, tenant_id: int) -> dict:
         sent = False
 
     return {"action": "send_email", "to": recipients, "subject": subject, "sent": sent}
+
+
+def execute_workflow_actions(tenant_id: int, workflow_id: int, workflow_dict: dict, event_data: dict) -> list:
+    """Execute all actions of a workflow manually. Persists execution record."""
+    actions = workflow_dict.get("actions", [])
+    wf_results = []
+
+    for action in actions:
+        try:
+            result = execute_action(action, event_data, tenant_id)
+            wf_results.append({
+                "action_type": action.get("type"),
+                "success": True,
+                "result": result,
+            })
+        except Exception as exc:
+            wf_results.append({
+                "action_type": action.get("type"),
+                "success": False,
+                "error": str(exc),
+            })
+
+    # Persist execution
+    actions_total = len(actions)
+    actions_succeeded = sum(1 for r in wf_results if r.get("success"))
+    status = "success" if actions_succeeded == actions_total else "failed" if actions_succeeded == 0 else "partial"
+
+    session = _get_session()
+    try:
+        from db.models import WorkflowExecution
+        execution = WorkflowExecution(
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            trigger_event="manual",
+            event_data=event_data,
+            results=wf_results,
+            status=status,
+            actions_total=actions_total,
+            actions_succeeded=actions_succeeded,
+        )
+        session.add(execution)
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.warning("manual_execution_persist_failed", error=str(exc))
+    finally:
+        session.close()
+
+    return wf_results

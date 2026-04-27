@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Lightning, EnvelopeSimple, Megaphone, ChartLineUp, FlowArrow, ArrowRight, CheckCircle, Plus, Trash, PencilSimple, ToggleLeft, ToggleRight, ChatText, Check, X } from "@phosphor-icons/react";
+import { Lightning, EnvelopeSimple, Megaphone, ChartLineUp, FlowArrow, ArrowRight, CheckCircle, Plus, Trash, PencilSimple, ToggleLeft, ToggleRight, ChatText, Check, X, ArrowUp, Play, ClockCounterClockwise } from "@phosphor-icons/react";
 import TabBar from "../components/TabBar";
 import api from "../services/api";
 import { useI18n } from "../contexts/I18nContext";
@@ -16,6 +16,7 @@ export default function WorkflowsHub({ onTabChange }) {
   const TABS = useMemo(() => [
     { key: "automatizaciones", label: t('tabAutomations') },
     { key: "aprobaciones", label: t('tabApprovals') },
+    { key: "historial", label: t('wfExecutionHistory') },
   ], [t]);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function WorkflowsHub({ onTabChange }) {
       <div style={{ marginTop: 20 }}>
         {activeTab === "automatizaciones" && <AutomatizacionesTab />}
         {activeTab === "aprobaciones" && <AprobacionesTab />}
+        {activeTab === "historial" && <ExecutionHistoryTab />}
       </div>
     </div>
   );
@@ -138,6 +140,14 @@ function CustomWorkflowsSection() {
     setShowBuilder(true);
   };
 
+  const handleTrigger = async (wf) => {
+    if (!window.confirm(t('wfRunConfirm'))) return;
+    try {
+      await api.post(`/workflows/${wf.id}/trigger`, { event_data: {} });
+      showToast(t('wfRunSuccess'), "success");
+    } catch { showToast("Error", "error"); }
+  };
+
   const handleSaved = () => {
     setShowBuilder(false);
     setEditingWorkflow(null);
@@ -176,6 +186,11 @@ function CustomWorkflowsSection() {
                   <button onClick={() => handleToggle(wf)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
                     {wf.enabled ? <ToggleRight size={22} weight="fill" style={{ color: "#16A34A" }} /> : <ToggleLeft size={22} style={{ color: "var(--text-muted)" }} />}
                   </button>
+                  {wf.trigger_type === "manual" && wf.enabled && (
+                    <button onClick={() => handleTrigger(wf)} title={t('wfRunNow')} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                      <Play size={16} weight="fill" style={{ color: "#4F46E5" }} />
+                    </button>
+                  )}
                   <button onClick={() => handleEdit(wf)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
                     <PencilSimple size={16} style={{ color: "var(--text-muted)" }} />
                   </button>
@@ -216,6 +231,66 @@ const ACTION_TYPES = [
   { value: "send_email", labelKey: "wfActionSendEmail" },
 ];
 
+const CONDITION_FIELDS = [
+  { value: "Estado", label: "Estado" },
+  { value: "Nº Doc. EIPSA", label: "Nº Doc. EIPSA" },
+  { value: "Pedido", label: "Pedido" },
+  { value: "Tipo Doc", label: "Tipo Doc." },
+  { value: "Repsonsable", label: "Responsable" },
+  { value: "Cliente", label: "Cliente" },
+  { value: "new_status", label: "Nuevo estado" },
+  { value: "old_status", label: "Estado anterior" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "enviado", label: "Enviado" },
+  { value: "aprobado", label: "Aprobado" },
+  { value: "rechazado", label: "Rechazado" },
+  { value: "com_menores", label: "Com. menores" },
+  { value: "com_mayores", label: "Com. mayores" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
+function ActionConfigFields({ action, index, updateActionConfig, inputStyle, t }) {
+  const cfg = action.config || {};
+  switch (action.type) {
+    case "notify":
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, paddingLeft: 4 }}>
+          <input value={cfg.title || ""} onChange={e => updateActionConfig(index, "title", e.target.value)} placeholder={t('wfNotifyTitle')} style={inputStyle} />
+          <textarea value={cfg.detail || ""} onChange={e => updateActionConfig(index, "detail", e.target.value)} placeholder={t('wfNotifyDetail')} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+      );
+    case "create_approval":
+      return (
+        <div style={{ display: "flex", gap: 8, marginTop: 6, paddingLeft: 4 }}>
+          <input value={cfg.title || ""} onChange={e => updateActionConfig(index, "title", e.target.value)} placeholder={t('wfApprovalTitle')} style={{ ...inputStyle, flex: 1 }} />
+          <input value={cfg.assigned_to || ""} onChange={e => updateActionConfig(index, "assigned_to", e.target.value)} placeholder={t('wfAssignedTo')} style={{ ...inputStyle, flex: 1 }} />
+        </div>
+      );
+    case "change_status":
+      return (
+        <div style={{ marginTop: 6, paddingLeft: 4 }}>
+          <select value={cfg.new_status || ""} onChange={e => updateActionConfig(index, "new_status", e.target.value)} style={inputStyle}>
+            {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+        </div>
+      );
+    case "send_email":
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, paddingLeft: 4 }}>
+          <input value={cfg.to || ""} onChange={e => updateActionConfig(index, "to", e.target.value)} placeholder="email@example.com" style={inputStyle} />
+          <input value={cfg.subject || ""} onChange={e => updateActionConfig(index, "subject", e.target.value)} placeholder={t('wfEmailSubject')} style={inputStyle} />
+          <textarea value={cfg.body || ""} onChange={e => updateActionConfig(index, "body", e.target.value)} placeholder={t('wfEmailBody')} rows={3} style={{ ...inputStyle, resize: "vertical" }} />
+          <p className="text-text-muted" style={{ fontSize: 11, fontStyle: "italic", margin: 0 }}>{t('wfPlaceholderHint')}</p>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
 function WorkflowBuilder({ workflow, onClose, onSaved }) {
   const { t } = useI18n();
   const { showToast } = useToast();
@@ -240,6 +315,14 @@ function WorkflowBuilder({ workflow, onClose, onSaved }) {
   const updateAction = (i, key, val) => {
     const updated = [...actions];
     updated[i] = { ...updated[i], [key]: val };
+    // Reset config when type changes
+    if (key === "type") updated[i].config = {};
+    setActions(updated);
+  };
+
+  const updateActionConfig = (i, key, val) => {
+    const updated = [...actions];
+    updated[i] = { ...updated[i], config: { ...(updated[i].config || {}), [key]: val } };
     setActions(updated);
   };
 
@@ -297,7 +380,10 @@ function WorkflowBuilder({ workflow, onClose, onSaved }) {
         </div>
         {conditions.map((cond, i) => (
           <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input value={cond.field} onChange={e => updateCondition(i, "field", e.target.value)} placeholder={t('wfField')} style={{ ...inputStyle, flex: 1 }} />
+            <select value={cond.field} onChange={e => updateCondition(i, "field", e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+              <option value="">{t('wfSelectField')}</option>
+              {CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
             <select value={cond.operator} onChange={e => updateCondition(i, "operator", e.target.value)} style={{ ...inputStyle, flex: 1 }}>
               <option value="equals">=</option>
               <option value="not_equals">!=</option>
@@ -318,11 +404,14 @@ function WorkflowBuilder({ workflow, onClose, onSaved }) {
           </button>
         </div>
         {actions.map((action, i) => (
-          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <select value={action.type} onChange={e => updateAction(i, "type", e.target.value)} style={{ ...inputStyle, flex: 1 }}>
-              {ACTION_TYPES.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>)}
-            </select>
-            <button onClick={() => removeAction(i)} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={16} style={{ color: "#DC2626" }} /></button>
+          <div key={i} style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-page)" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <select value={action.type} onChange={e => updateAction(i, "type", e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                {ACTION_TYPES.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>)}
+              </select>
+              <button onClick={() => removeAction(i)} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={16} style={{ color: "#DC2626" }} /></button>
+            </div>
+            <ActionConfigFields action={action} index={i} updateActionConfig={updateActionConfig} inputStyle={inputStyle} t={t} />
           </div>
         ))}
       </div>
@@ -438,9 +527,9 @@ function ApprovalsSection() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8 }}>
-          {["pending", "approved", "rejected", "all"].map(f => (
+          {["pending", "approved", "rejected", "escalated", "all"].map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid var(--border)", background: filter === f ? "#4F46E514" : "transparent", color: filter === f ? "#4F46E5" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              {f === "pending" ? t('wfPendingApprovals') : f === "approved" ? t('approved') : f === "rejected" ? t('rechazado') : t('all')}
+              {f === "pending" ? t('wfPendingApprovals') : f === "approved" ? t('approved') : f === "rejected" ? t('rechazado') : f === "escalated" ? t('wfEscalated') : t('all')}
             </button>
           ))}
         </div>
@@ -472,7 +561,7 @@ function ApprovalsSection() {
                     {req.due_date && <span>{t('wfDueDate')}: {new Date(req.due_date).toLocaleDateString()}</span>}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 12, background: req.status === "approved" ? "#16A34A18" : req.status === "rejected" ? "#DC262618" : req.status === "pending" ? "#D9770618" : "#64748B18", color: req.status === "approved" ? "#16A34A" : req.status === "rejected" ? "#DC2626" : req.status === "pending" ? "#D97706" : "#64748B", fontSize: 11, fontWeight: 700, textTransform: "capitalize" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 12, background: req.status === "approved" ? "#16A34A18" : req.status === "rejected" ? "#DC262618" : req.status === "pending" ? "#D9770618" : req.status === "escalated" ? "#D9770618" : "#64748B18", color: req.status === "approved" ? "#16A34A" : req.status === "rejected" ? "#DC2626" : req.status === "pending" ? "#D97706" : req.status === "escalated" ? "#D97706" : "#64748B", fontSize: 11, fontWeight: 700, textTransform: "capitalize" }}>
                   {req.status}
                 </div>
               </div>
@@ -497,6 +586,9 @@ function ApprovalsSection() {
                   <button onClick={() => handleResolve(req.id, "reject")} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 14px", borderRadius: 8, border: "none", background: "#DC2626", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                     <X size={14} /> {t('wfReject')}
                   </button>
+                  <button onClick={() => handleResolve(req.id, "escalate")} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 14px", borderRadius: 8, border: "none", background: "#D97706", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <ArrowUp size={14} /> {t('wfEscalate')}
+                  </button>
                 </div>
               )}
             </div>
@@ -509,18 +601,122 @@ function ApprovalsSection() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={() => setCommentModal(null)}>
           <div className="card" style={{ padding: 24, width: 400, maxWidth: "90vw" }} onClick={e => e.stopPropagation()}>
             <h4 className="text-text-main" style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
-              {commentModal.action === "approve" ? t('wfApprove') : t('wfReject')}
+              {commentModal.action === "approve" ? t('wfApprove') : commentModal.action === "reject" ? t('wfReject') : t('wfEscalate')}
             </h4>
             <textarea value={commentText} onChange={e => setCommentText(e.target.value)} placeholder={t('wfComment')} rows={3} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-page)", color: "var(--text-main)", fontSize: 13, resize: "vertical", marginBottom: 12 }} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button onClick={() => setCommentModal(null)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-main)", fontSize: 13, cursor: "pointer" }}>
                 {t('cancel')}
               </button>
-              <button onClick={submitResolve} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: commentModal.action === "approve" ? "#16A34A" : "#DC2626", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <button onClick={submitResolve} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: commentModal.action === "approve" ? "#16A34A" : commentModal.action === "reject" ? "#DC2626" : "#D97706", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                 {t('confirm')}
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Execution History Tab ──────────────────────────────────────────────────── */
+
+function ExecutionHistoryTab() {
+  const { t } = useI18n();
+  const tenant = useTenant();
+  const hasWorkflows = tenant?.hasFeature?.("workflows") ?? false;
+  const [executions, setExecutions] = useState([]);
+  const [filterStatus, setFilterStatus] = useState("");
+
+  const fetchExecutions = useCallback(() => {
+    const params = filterStatus ? `?status=${filterStatus}&limit=100` : "?limit=100";
+    api.get(`/workflows/executions/${params}`).then(r => setExecutions(r.data)).catch(() => {});
+  }, [filterStatus]);
+
+  useEffect(() => { if (hasWorkflows) fetchExecutions(); }, [fetchExecutions, hasWorkflows]);
+
+  usePolling(fetchExecutions, 120000);
+
+  if (!hasWorkflows) {
+    return (
+      <div className="card" style={{ padding: 32, textAlign: "center" }}>
+        <ClockCounterClockwise size={40} weight="thin" style={{ color: "var(--text-muted)", margin: "0 auto 12px" }} />
+        <h3 className="text-text-main" style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{t('wfExecutionHistory')}</h3>
+        <p className="text-text-muted" style={{ fontSize: 13 }}>{t('wfFeatureUnavailable')}</p>
+      </div>
+    );
+  }
+
+  const statusColor = (s) => s === "success" ? "#16A34A" : s === "partial" ? "#D97706" : "#DC2626";
+  const statusLabel = (s) => s === "success" ? t('wfExecutionSuccess') : s === "partial" ? t('wfExecutionPartial') : t('wfExecutionFailed');
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {["", "success", "partial", "failed"].map(s => (
+          <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid var(--border)", background: filterStatus === s ? "#4F46E514" : "transparent", color: filterStatus === s ? "#4F46E5" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {s === "" ? t('all') : statusLabel(s)}
+          </button>
+        ))}
+      </div>
+
+      {executions.length === 0 ? (
+        <div className="card" style={{ padding: 32, textAlign: "center" }}>
+          <ClockCounterClockwise size={40} weight="thin" style={{ color: "var(--text-muted)", margin: "0 auto 12px" }} />
+          <p className="text-text-main" style={{ fontSize: 14, fontWeight: 600 }}>{t('wfNoExecutions')}</p>
+          <p className="text-text-muted" style={{ fontSize: 13 }}>{t('wfNoExecutionsDesc')}</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {executions.map(exec => (
+            <ExecutionCard key={exec.id} exec={exec} statusColor={statusColor} statusLabel={statusLabel} t={t} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExecutionCard({ exec, statusColor, statusLabel, t }) {
+  const [expanded, setExpanded] = useState(false);
+  const color = statusColor(exec.status);
+
+  return (
+    <div className="card" style={{ padding: 16, cursor: "pointer" }} onClick={() => setExpanded(!expanded)}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}14`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Lightning size={16} style={{ color }} />
+          </div>
+          <div>
+            <p className="text-text-main" style={{ fontSize: 13, fontWeight: 600 }}>
+              Workflow #{exec.workflow_id}
+            </p>
+            <p className="text-text-muted" style={{ fontSize: 11 }}>
+              {exec.trigger_event} · {exec.actions_succeeded}/{exec.actions_total} {t('wfActionsCount')}
+            </p>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="text-text-muted" style={{ fontSize: 11 }}>
+            {exec.executed_at ? new Date(exec.executed_at).toLocaleString() : "—"}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 12, background: `${color}18`, color, fontSize: 10, fontWeight: 700 }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+            {statusLabel(exec.status)}
+          </div>
+        </div>
+      </div>
+
+      {expanded && exec.results?.length > 0 && (
+        <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+          {exec.results.map((r, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+              {r.success ? <Check size={14} style={{ color: "#16A34A" }} /> : <X size={14} style={{ color: "#DC2626" }} />}
+              <span className="text-text-sub" style={{ fontSize: 12 }}>{r.action_type}</span>
+              {r.error && <span className="text-text-muted" style={{ fontSize: 11 }}>— {r.error}</span>}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -535,6 +731,7 @@ function CreateApprovalForm({ onSubmit, onClose }) {
   const [description, setDescription] = useState("");
   const [documentRef, setDocumentRef] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
+  const [dueDate, setDueDate] = useState("");
 
   const inputStyle = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-page)", color: "var(--text-main)", fontSize: 13 };
 
@@ -558,13 +755,19 @@ function CreateApprovalForm({ onSubmit, onClose }) {
         <label className="text-text-sub" style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>{t('wfFlowDescription')}</label>
         <input value={description} onChange={e => setDescription(e.target.value)} style={inputStyle} />
       </div>
-      <div style={{ marginBottom: 16 }}>
-        <label className="text-text-sub" style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>{t('wfDocRef')}</label>
-        <input value={documentRef} onChange={e => setDocumentRef(e.target.value)} style={inputStyle} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+        <div>
+          <label className="text-text-sub" style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>{t('wfDocRef')}</label>
+          <input value={documentRef} onChange={e => setDocumentRef(e.target.value)} style={inputStyle} />
+        </div>
+        <div>
+          <label className="text-text-sub" style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>{t('wfDueDate')}</label>
+          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
+        </div>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-main)", fontSize: 13, cursor: "pointer" }}>{t('cancel')}</button>
-        <button onClick={() => onSubmit({ title, description, document_ref: documentRef, assigned_to: assignedTo || undefined })} disabled={!title.trim()} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: !title.trim() ? 0.5 : 1 }}>{t('save')}</button>
+        <button onClick={() => onSubmit({ title, description, document_ref: documentRef, assigned_to: assignedTo || undefined, due_date: dueDate || undefined })} disabled={!title.trim()} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: !title.trim() ? 0.5 : 1 }}>{t('save')}</button>
       </div>
     </div>
   );

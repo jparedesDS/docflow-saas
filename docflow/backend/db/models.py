@@ -351,6 +351,28 @@ class ApprovalRequest(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+# ── Workflow Executions ──────────────────────────────────────────────────
+
+
+class WorkflowExecution(Base):
+    __tablename__ = "workflow_executions"
+    __table_args__ = (
+        Index("ix_workflow_executions_tenant", "tenant_id"),
+        Index("ix_workflow_executions_workflow", "workflow_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
+    trigger_event = Column(String(50), nullable=False)
+    event_data = Column(JSONB, nullable=False, default=dict)
+    results = Column(JSONB, nullable=False, default=list)
+    status = Column(String(20), nullable=False, default="success")  # success, partial, failed
+    actions_total = Column(Integer, nullable=False, default=0)
+    actions_succeeded = Column(Integer, nullable=False, default=0)
+    executed_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 # ── Audit Logs ────────────────────────────────────────────────────────────
 
 

@@ -53,6 +53,10 @@ class ResolveRequest(BaseModel):
     comment: str = ""
 
 
+class TriggerRequest(BaseModel):
+    event_data: dict = {}
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
@@ -81,6 +85,24 @@ def create_workflow(body: WorkflowCreate, current_user: dict = Depends(get_curre
     data = body.model_dump()
     data["created_by"] = current_user["username"]
     return workflow_service.create_workflow(tenant_id, data)
+
+
+# ── Execution history endpoints (MUST be before /{workflow_id} routes) ────
+
+
+@router.get("/executions/")
+def list_executions(
+    workflow_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user),
+):
+    tenant_id = current_user.get("tenant_id", 1)
+    _require_workflows(tenant_id)
+    return workflow_service.list_executions(tenant_id, workflow_id=workflow_id, status=status, limit=limit)
+
+
+# ── Workflow detail endpoints ─────────────────────────────────────────────
 
 
 @router.get("/{workflow_id}")
@@ -120,6 +142,35 @@ def toggle_workflow(workflow_id: int, body: ToggleRequest, current_user: dict = 
     if not result:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return result
+
+
+@router.get("/{workflow_id}/executions")
+def get_workflow_executions(
+    workflow_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    tenant_id = current_user.get("tenant_id", 1)
+    _require_workflows(tenant_id)
+    return workflow_service.list_executions(tenant_id, workflow_id=workflow_id, limit=limit)
+
+
+@router.post("/{workflow_id}/trigger")
+def trigger_workflow(workflow_id: int, body: TriggerRequest, current_user: dict = Depends(get_current_user)):
+    """Manually trigger a workflow. Only works for manual trigger_type."""
+    tenant_id = current_user.get("tenant_id", 1)
+    _require_workflows(tenant_id)
+    wf = workflow_service.get_workflow(tenant_id, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if wf["trigger_type"] != "manual":
+        raise HTTPException(status_code=400, detail="Only manual workflows can be triggered directly")
+    if not wf["enabled"]:
+        raise HTTPException(status_code=400, detail="Workflow is disabled")
+
+    from services.workflow_engine import execute_workflow_actions
+    results = execute_workflow_actions(tenant_id, workflow_id, wf, body.event_data)
+    return {"workflow_id": workflow_id, "results": results}
 
 
 # ── Approval endpoints ─────────────────────────────────────────────────────

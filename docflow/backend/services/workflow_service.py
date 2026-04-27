@@ -296,6 +296,46 @@ def escalate_request(tenant_id: int, request_id: int, by: str, reason: str = "")
         session.close()
 
 
+# ── Workflow Executions ────────────────────────────────────────────────────
+
+
+def list_executions(
+    tenant_id: int,
+    workflow_id: Optional[int] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+) -> list:
+    from db.models import WorkflowExecution
+    session = _get_session()
+    try:
+        query = session.query(WorkflowExecution).filter(
+            WorkflowExecution.tenant_id == tenant_id,
+        )
+        if workflow_id is not None:
+            query = query.filter(WorkflowExecution.workflow_id == workflow_id)
+        if status:
+            query = query.filter(WorkflowExecution.status == status)
+        executions = query.order_by(WorkflowExecution.executed_at.desc()).limit(limit).all()
+        return [_execution_to_dict(e) for e in executions]
+    finally:
+        session.close()
+
+
+def _execution_to_dict(e) -> dict:
+    return {
+        "id": e.id,
+        "tenant_id": e.tenant_id,
+        "workflow_id": e.workflow_id,
+        "trigger_event": e.trigger_event,
+        "event_data": e.event_data or {},
+        "results": e.results or [],
+        "status": e.status,
+        "actions_total": e.actions_total,
+        "actions_succeeded": e.actions_succeeded,
+        "executed_at": e.executed_at.isoformat() if e.executed_at else None,
+    }
+
+
 def _approval_to_dict(r) -> dict:
     return {
         "id": r.id,
